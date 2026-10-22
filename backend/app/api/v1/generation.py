@@ -10,13 +10,16 @@ from backend.app.schemas.asset import GenerationJobCreate, EditJobCreate, JobRes
 from backend.app.services.approval import approval_service
 from backend.app.workers.job_runner import job_runner
 
+from backend.app.core.security import get_current_user_id, verify_project_access
+
 router = APIRouter(tags=["Generation"])
 
 @router.post("/panels/{panel_id}/generation-jobs", response_model=JobResponse, status_code=status.HTTP_202_ACCEPTED)
 async def trigger_panel_generation(
     panel_id: str,
     data: GenerationJobCreate,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id)
 ):
     stmt = (
         select(Panel)
@@ -33,6 +36,9 @@ async def trigger_panel_generation(
     if not panel:
         raise HTTPException(status_code=404, detail="Panel not found.")
 
+    project_id = panel.beat.scene.episode.adaptation_plan.project_id
+    await verify_project_access(project_id, user_id, db)
+
     # REQUIREMENT 2.5 & TEST 6: Enforce Approval Gate for Final Generation
     if data.stage == "final" and not panel.is_approved:
         raise HTTPException(
@@ -40,7 +46,6 @@ async def trigger_panel_generation(
             detail=f"Approval gate failure: Cannot generate final illustration for unapproved panel {panel.panel_number}."
         )
 
-    project_id = panel.beat.scene.episode.adaptation_plan.project_id
     job_type = "final_generation" if data.stage == "final" else "draft_generation"
 
     job = await job_runner.create_job(
@@ -61,13 +66,16 @@ async def trigger_panel_generation(
 async def trigger_asset_edit(
     asset_id: str,
     data: EditJobCreate,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id)
 ):
     stmt = select(Asset).where(Asset.id == asset_id)
     res = await db.execute(stmt)
     asset = res.scalar_one_or_none()
     if not asset:
         raise HTTPException(status_code=404, detail="Asset not found.")
+
+    await verify_project_access(asset.project_id, user_id, db)
 
     job = await job_runner.create_job(
         project_id=asset.project_id,
@@ -80,6 +88,7 @@ async def trigger_asset_edit(
         }
     )
     return job
+
 
 @router.get("/panels/{panel_id}/assets", response_model=List[AssetResponse])
 async def list_panel_assets(

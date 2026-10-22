@@ -31,12 +31,12 @@ export default function StudioHome() {
   const [references, setReferences] = useState<ReferenceAsset[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  const loadProjects = async () => {
+  const loadProjects = React.useCallback(async () => {
     try {
       const data = await api.getProjects();
       setProjects(data);
-      if (data.length > 0 && !currentProject) {
-        setCurrentProject(data[0]);
+      if (data.length > 0) {
+        setCurrentProject((prev) => prev || data[0]);
       } else if (data.length === 0) {
         setShowDashboard(true);
       }
@@ -45,9 +45,9 @@ export default function StudioHome() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
-  const loadProjectDetails = async (projectId: string) => {
+  const loadProjectDetails = React.useCallback(async (projectId: string) => {
     try {
       const [proj, docs, refs] = await Promise.all([
         api.getProject(projectId),
@@ -77,17 +77,18 @@ export default function StudioHome() {
     } catch (err) {
       console.error("Failed to load project details", err);
     }
-  };
-
-  useEffect(() => {
-    loadProjects();
   }, []);
 
   useEffect(() => {
-    if (currentProject) {
+    loadProjects();
+  }, [loadProjects]);
+
+  useEffect(() => {
+    if (currentProject?.id) {
       loadProjectDetails(currentProject.id);
     }
-  }, [currentProject?.id]);
+  }, [currentProject?.id, loadProjectDetails]);
+
 
   const handleCreateProject = async (title: string, description: string, genre: string) => {
     const newProj = await api.createProject({

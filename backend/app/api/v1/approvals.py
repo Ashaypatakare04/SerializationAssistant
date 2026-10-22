@@ -31,11 +31,15 @@ async def record_approval(
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
+from backend.app.core.security import get_current_user_id, verify_project_access
+
 @router.get("/projects/{project_id}/approvals", response_model=List[ApprovalResponse])
 async def list_project_approvals(
     project_id: str,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id)
 ):
+    await verify_project_access(project_id, user_id, db)
     stmt = (
         select(Approval)
         .where(Approval.project_id == project_id)
@@ -43,3 +47,4 @@ async def list_project_approvals(
     )
     res = await db.execute(stmt)
     return res.scalars().all()
+

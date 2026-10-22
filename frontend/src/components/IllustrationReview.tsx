@@ -35,13 +35,17 @@ export const IllustrationReview: React.FC<IllustrationReviewProps> = ({
   const [isProcessing, setIsProcessing] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
-  const allPanels: Panel[] = [];
-  episode?.scenes?.forEach((s) => {
-    s.beats?.forEach((b) => {
-      allPanels.push(...b.panels);
+  const allPanels = React.useMemo(() => {
+    const panels: Panel[] = [];
+    episode?.scenes?.forEach((s) => {
+      s.beats?.forEach((b) => {
+        panels.push(...b.panels);
+      });
     });
-  });
-  allPanels.sort((a, b) => a.panel_number - b.panel_number);
+    panels.sort((a, b) => a.panel_number - b.panel_number);
+    return panels;
+  }, [episode]);
+
 
   useEffect(() => {
     if (allPanels.length > 0 && !selectedPanel) {

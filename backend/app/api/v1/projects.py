@@ -59,12 +59,15 @@ async def list_projects(
     res = await db.execute(stmt)
     return res.scalars().all()
 
+from backend.app.core.security import get_current_user_id, verify_project_access
+
 @router.get("/{project_id}", response_model=ProjectResponse)
 async def get_project(
     project_id: str,
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id)
 ):
+    await verify_project_access(project_id, user_id, db)
     stmt = (
         select(Project)
         .options(selectinload(Project.documents))
@@ -83,11 +86,7 @@ async def update_project(
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id)
 ):
-    stmt = select(Project).where(Project.id == project_id)
-    res = await db.execute(stmt)
-    project = res.scalar_one_or_none()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found.")
+    project = await verify_project_access(project_id, user_id, db, require_owner=False)
 
     for field, val in data.model_dump(exclude_unset=True).items():
         setattr(project, field, val)
@@ -95,3 +94,4 @@ async def update_project(
     await db.commit()
     await db.refresh(project)
     return project
+

@@ -8,6 +8,8 @@ from backend.app.models.style import ReferenceAsset, CharacterReference
 from backend.app.schemas.style import ReferenceAssetResponse, CharacterReferenceCreate, CharacterReferenceResponse
 from backend.app.services.storage import storage_service
 
+from backend.app.core.security import get_current_user_id, verify_project_access
+
 router = APIRouter(tags=["References"])
 
 @router.post("/projects/{project_id}/references", response_model=ReferenceAssetResponse, status_code=status.HTTP_201_CREATED)
@@ -17,12 +19,10 @@ async def upload_reference(
     role: str = Form("visual_style"),  # visual_style, character_identity, layout_composition, environment
     label: str = Form(""),
     description: Optional[str] = Form(None),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id)
 ):
-    stmt = select(Project).where(Project.id == project_id)
-    res = await db.execute(stmt)
-    if not res.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Project not found.")
+    await verify_project_access(project_id, user_id, db)
 
     raw_bytes = await file.read()
     if len(raw_bytes) > 20 * 1024 * 1024:
@@ -58,8 +58,10 @@ async def upload_reference(
 async def list_references(
     project_id: str,
     role: Optional[str] = None,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id)
 ):
+    await verify_project_access(project_id, user_id, db)
     stmt = select(ReferenceAsset).where(
         ReferenceAsset.project_id == project_id,
         ReferenceAsset.is_active == True
@@ -75,8 +77,10 @@ async def list_references(
 async def link_character_reference(
     project_id: str,
     data: CharacterReferenceCreate,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id)
 ):
+    await verify_project_access(project_id, user_id, db)
     char_ref = CharacterReference(
         character_id=data.character_id,
         reference_asset_id=data.reference_asset_id,
@@ -88,3 +92,4 @@ async def link_character_reference(
     await db.commit()
     await db.refresh(char_ref)
     return char_ref
+

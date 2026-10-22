@@ -9,12 +9,15 @@ from backend.app.schemas.asset import JobResponse
 from backend.app.services.storyboard import storyboard_service
 from backend.app.workers.job_runner import job_runner
 
+from backend.app.core.security import get_current_user_id, verify_project_access
+
 router = APIRouter(tags=["Storyboard"])
 
 @router.post("/episodes/{episode_id}/storyboard-jobs", response_model=JobResponse, status_code=status.HTTP_202_ACCEPTED)
 async def trigger_storyboard_generation(
     episode_id: str,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id)
 ):
     stmt = select(Episode).where(Episode.id == episode_id)
     res = await db.execute(stmt)
@@ -27,12 +30,15 @@ async def trigger_storyboard_generation(
     plan_res = await db.execute(plan_stmt)
     plan = plan_res.scalar_one()
 
+    await verify_project_access(plan.project_id, user_id, db)
+
     job = await job_runner.create_job(
         project_id=plan.project_id,
         job_type="storyboard_gen",
         payload={"episode_id": episode_id}
     )
     return job
+
 
 @router.patch("/panels/{panel_id}", response_model=PanelResponse)
 async def update_panel(

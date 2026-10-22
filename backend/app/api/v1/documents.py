@@ -8,6 +8,8 @@ from backend.app.models.project import Project, SourceDocument
 from backend.app.schemas.project import SourceDocumentResponse
 from backend.app.services.source_ingestion import source_ingestion_service
 
+from backend.app.core.security import get_current_user_id, verify_project_access
+
 router = APIRouter(tags=["Source Documents"])
 
 @router.post("/projects/{project_id}/documents", response_model=SourceDocumentResponse, status_code=status.HTTP_201_CREATED)
@@ -16,14 +18,10 @@ async def upload_document(
     file: Optional[UploadFile] = File(None),
     raw_text: Optional[str] = Form(None),
     filename: Optional[str] = Form(None),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id)
 ):
-    # Verify project exists
-    stmt = select(Project).where(Project.id == project_id)
-    res = await db.execute(stmt)
-    project = res.scalar_one_or_none()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found.")
+    await verify_project_access(project_id, user_id, db)
 
     if file:
         content = await file.read()
@@ -56,8 +54,10 @@ async def upload_document(
 @router.get("/projects/{project_id}/documents", response_model=List[SourceDocumentResponse])
 async def list_documents(
     project_id: str,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id)
 ):
+    await verify_project_access(project_id, user_id, db)
     stmt = (
         select(SourceDocument)
         .options(selectinload(SourceDocument.sections))
@@ -66,3 +66,4 @@ async def list_documents(
     )
     res = await db.execute(stmt)
     return res.scalars().all()
+

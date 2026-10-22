@@ -72,3 +72,6 @@ class CharacterReference(Base, TimestampMixin):
     character_version_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
     relevance_notes: Mapped[str] = mapped_column(Text, default="")
     is_primary_sheet: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    reference_asset: Mapped["ReferenceAsset"] = relationship("ReferenceAsset", lazy="selectin")
+

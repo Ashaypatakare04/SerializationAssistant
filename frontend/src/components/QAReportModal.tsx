@@ -14,18 +14,19 @@ export const QAReportModal: React.FC<QAReportModalProps> = ({ episodeId, onClose
   const [report, setReport] = useState<FullQAReport | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  const loadReport = () => {
+  const loadReport = React.useCallback(() => {
     if (!episodeId) return;
     setIsLoading(true);
     api.getQAReport(episodeId)
       .then((rep) => setReport(rep))
       .catch((err) => console.error(err))
       .finally(() => setIsLoading(false));
-  };
+  }, [episodeId]);
 
   useEffect(() => {
     loadReport();
-  }, [episodeId]);
+  }, [loadReport]);
+
 
   return (
     <div className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-4">

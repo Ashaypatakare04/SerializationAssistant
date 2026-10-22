@@ -10,28 +10,37 @@ class ProviderFactory:
     @staticmethod
     def get_llm_provider(provider_name: str = None) -> BaseLLMProvider:
         name = (provider_name or settings.LLM_PROVIDER).lower()
-        if name == "openai":
+        if name == "mock":
+            return mock_llm_provider
+        elif name == "openai":
             p = OpenAIProvider()
-            if p.is_configured():
-                return p
+            if not p.is_configured():
+                raise RuntimeError("OpenAI provider requested but OPENAI_API_KEY is not configured.")
+            return p
         elif name == "gemini":
             p = GeminiProvider()
-            if p.is_configured():
-                return p
-        return mock_llm_provider
+            if not p.is_configured():
+                raise RuntimeError("Gemini provider requested but GEMINI_API_KEY is not configured.")
+            return p
+        raise ValueError(f"Unknown LLM provider requested: '{name}'. Available: mock, openai, gemini.")
 
     @staticmethod
     def get_image_provider(provider_name: str = None) -> BaseImageProvider:
         name = (provider_name or settings.IMAGE_PROVIDER).lower()
-        if name == "openai":
+        if name == "mock":
+            return mock_image_provider
+        elif name == "openai":
             p = OpenAIProvider()
-            if p.is_configured():
-                return p
+            if not p.is_configured():
+                raise RuntimeError("OpenAI image provider requested but OPENAI_API_KEY is not configured.")
+            return p
         elif name == "stability":
             p = StabilityProvider()
-            if p.is_configured():
-                return p
-        return mock_image_provider
+            if not p.is_configured():
+                raise RuntimeError("Stability AI provider requested but STABILITY_API_KEY is not configured.")
+            return p
+        raise ValueError(f"Unknown Image provider requested: '{name}'. Available: mock, openai, stability.")
+
 
     @classmethod
     def get_all_capabilities(cls) -> Dict[str, Any]:

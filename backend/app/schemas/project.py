@@ -1,6 +1,6 @@
 from typing import Optional, List, Dict, Any
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 class ProjectCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=255)
@@ -16,6 +16,8 @@ class ProjectUpdate(BaseModel):
     configuration: Optional[Dict[str, Any]] = None
 
 class SourceSectionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     section_index: int
     title: str
@@ -23,10 +25,9 @@ class SourceSectionResponse(BaseModel):
     start_char: int
     end_char: int
 
-    class Config:
-        from_attributes = True
-
 class SourceDocumentResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     project_id: str
     filename: str
@@ -37,10 +38,9 @@ class SourceDocumentResponse(BaseModel):
     created_at: datetime
     sections: List[SourceSectionResponse] = []
 
-    class Config:
-        from_attributes = True
-
 class ProjectResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     title: str
     description: Optional[str]
@@ -52,6 +52,3 @@ class ProjectResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     documents: List[SourceDocumentResponse] = []
-
-    class Config:
-        from_attributes = True

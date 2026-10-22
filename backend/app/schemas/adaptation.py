@@ -1,6 +1,6 @@
 from typing import Optional, List, Dict, Any
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 class DialogueSegmentCreate(BaseModel):
     segment_type: str = "speech_bubble"
@@ -11,6 +11,8 @@ class DialogueSegmentCreate(BaseModel):
     position_hint: str = "top_right"
 
 class DialogueSegmentResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     panel_id: str
     segment_type: str
@@ -19,9 +21,6 @@ class DialogueSegmentResponse(BaseModel):
     text_content: str
     order_in_panel: int
     position_hint: str
-
-    class Config:
-        from_attributes = True
 
 class PanelUpdate(BaseModel):
     narrative_purpose: Optional[str] = None
@@ -42,6 +41,8 @@ class PanelUpdate(BaseModel):
     is_approved: Optional[bool] = None
 
 class PanelResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     beat_id: str
     panel_number: int
@@ -66,10 +67,9 @@ class PanelResponse(BaseModel):
     active_asset_id: Optional[str]
     dialogues: List[DialogueSegmentResponse] = []
 
-    class Config:
-        from_attributes = True
-
 class BeatResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     scene_id: str
     beat_number: int
@@ -81,10 +81,9 @@ class BeatResponse(BaseModel):
     visual_exaggeration_constraint: str
     panels: List[PanelResponse] = []
 
-    class Config:
-        from_attributes = True
-
 class SceneResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     episode_id: str
     scene_number: int
@@ -95,10 +94,9 @@ class SceneResponse(BaseModel):
     pacing_note: str
     beats: List[BeatResponse] = []
 
-    class Config:
-        from_attributes = True
-
 class EpisodeResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     adaptation_plan_id: str
     episode_number: int
@@ -111,10 +109,9 @@ class EpisodeResponse(BaseModel):
     status: str
     scenes: List[SceneResponse] = []
 
-    class Config:
-        from_attributes = True
-
 class AdaptationPlanResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     project_id: str
     version: int
@@ -126,6 +123,3 @@ class AdaptationPlanResponse(BaseModel):
     is_approved: bool
     approved_by: Optional[str]
     episodes: List[EpisodeResponse] = []
-
-    class Config:
-        from_attributes = True

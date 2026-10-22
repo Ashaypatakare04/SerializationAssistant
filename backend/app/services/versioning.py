@@ -33,17 +33,28 @@ class VersioningService:
             is_stale=False
         ))
         # 3. Character refs
-        for ref in character_refs:
-            ref_id = ref.get("id") or ref.get("reference_asset_id")
+        for char_item in character_refs:
+            ref_id = char_item.get("id") or char_item.get("reference_asset_id") or char_item.get("character_id")
             if ref_id:
                 db.add(AssetDependency(
                     asset_version_id=asset_version_id,
                     dependency_type="character_ref",
                     dependency_id=ref_id,
-                    dependency_version=ref.get("version", 1),
+                    dependency_version=char_item.get("version", 1),
                     is_stale=False
                 ))
+            for ref_asset in char_item.get("reference_assets", []):
+                ra_id = ref_asset.get("reference_asset_id") or ref_asset.get("id")
+                if ra_id:
+                    db.add(AssetDependency(
+                        asset_version_id=asset_version_id,
+                        dependency_type="character_ref",
+                        dependency_id=ra_id,
+                        dependency_version=1,
+                        is_stale=False
+                    ))
         await db.flush()
+
 
     @classmethod
     async def check_stale_job_overwrite_guard(

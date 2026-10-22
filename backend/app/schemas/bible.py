@@ -1,8 +1,10 @@
 from typing import Optional, List, Dict, Any
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 class CharacterVersionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     character_id: str
     version_number: int
@@ -14,9 +16,6 @@ class CharacterVersionResponse(BaseModel):
     body_proportions: str
     story_context: str
     is_approved: bool
-
-    class Config:
-        from_attributes = True
 
 class CharacterCreate(BaseModel):
     canonical_name: str
@@ -43,6 +42,8 @@ class CharacterUpdate(BaseModel):
     body_proportions: Optional[str] = None
 
 class CharacterResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     story_bible_id: str
     canonical_name: str
@@ -53,20 +54,18 @@ class CharacterResponse(BaseModel):
     active_version_id: Optional[str]
     versions: List[CharacterVersionResponse] = []
 
-    class Config:
-        from_attributes = True
-
 class RelationshipResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     source_character_id: str
     target_character_id: str
     relationship_type: str
     dynamics_description: str
 
-    class Config:
-        from_attributes = True
-
 class StoryEventResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     chronological_order: int
     title: str
@@ -74,18 +73,14 @@ class StoryEventResponse(BaseModel):
     source_locator: Optional[str]
     emotional_weight: str
 
-    class Config:
-        from_attributes = True
-
 class ContinuityFactResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     category: str
     statement: str
     source_locator: Optional[str]
     is_confirmed: bool
-
-    class Config:
-        from_attributes = True
 
 class StoryBibleUpdate(BaseModel):
     premise: Optional[str] = None
@@ -97,6 +92,8 @@ class StoryBibleUpdate(BaseModel):
     uncertainties: Optional[List[Dict[str, Any]]] = None
 
 class StoryBibleResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     project_id: str
     version: int
@@ -114,6 +111,3 @@ class StoryBibleResponse(BaseModel):
     events: List[StoryEventResponse] = []
     continuity_facts: List[ContinuityFactResponse] = []
     relationships: List[RelationshipResponse] = []
-
-    class Config:
-        from_attributes = True

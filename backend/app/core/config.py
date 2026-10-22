@@ -1,7 +1,8 @@
 import os
 from typing import List
 from pydantic import Field
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
 
 class Settings(BaseSettings):
     APP_NAME: str = "AI Novel-to-Webtoon Studio"
@@ -37,8 +38,7 @@ class Settings(BaseSettings):
     MAX_CONCURRENT_JOBS: int = 4
     WORKER_POLL_INTERVAL_SECONDS: float = 1.0
 
-    class Config:
-        env_file = ".env"
-        extra = "allow"
+    model_config = SettingsConfigDict(env_file=".env", extra="allow")
+
 
 settings = Settings()

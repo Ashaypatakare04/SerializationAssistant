@@ -89,6 +89,10 @@ class WebtoonExporter:
         if require_all_approved and unapproved_panels:
             raise ValueError(f"Cannot export: Panels {unapproved_panels} have not received explicit creator approval.")
 
+        if require_all_approved and missing_assets:
+            raise ValueError(f"Cannot export: Missing illustrations for panels {missing_assets}. All panel illustrations must be generated and approved before export.")
+
+
         # Prepare stitched long strip(s)
         # 1. Calculate dimensions
         standard_width = 800

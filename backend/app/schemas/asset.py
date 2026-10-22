@@ -1,8 +1,10 @@
 from typing import Optional, List, Dict, Any
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 class AssetVersionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     asset_id: str
     version_number: int
@@ -25,10 +27,9 @@ class AssetVersionResponse(BaseModel):
     is_mock: bool
     created_at: datetime
 
-    class Config:
-        from_attributes = True
-
 class AssetResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     project_id: str
     panel_id: Optional[str]
@@ -36,9 +37,6 @@ class AssetResponse(BaseModel):
     current_version: int
     status: str
     versions: List[AssetVersionResponse] = []
-
-    class Config:
-        from_attributes = True
 
 class GenerationJobCreate(BaseModel):
     stage: str = "draft"  # draft, final
@@ -52,6 +50,8 @@ class EditJobCreate(BaseModel):
     mask_storage_key: Optional[str] = None
 
 class JobResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     project_id: str
     job_type: str
@@ -65,9 +65,6 @@ class JobResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
-
 class ApprovalCreate(BaseModel):
     artifact_type: str  # story_bible, adaptation_plan, storyboard, panel_asset, final_episode
     artifact_id: str
@@ -76,6 +73,8 @@ class ApprovalCreate(BaseModel):
     comments: Optional[str] = None
 
 class ApprovalResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     project_id: str
     artifact_type: str
@@ -86,9 +85,6 @@ class ApprovalResponse(BaseModel):
     comments: Optional[str]
     created_at: datetime
 
-    class Config:
-        from_attributes = True
-
 class ReviewCreate(BaseModel):
     target_type: str
     target_id: str
@@ -98,6 +94,8 @@ class ReviewCreate(BaseModel):
     findings: List[Dict[str, Any]] = []
 
 class ReviewResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     project_id: str
     target_type: str
@@ -109,10 +107,9 @@ class ReviewResponse(BaseModel):
     findings: List[Any]
     created_at: datetime
 
-    class Config:
-        from_attributes = True
-
 class ExportResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     project_id: str
     episode_id: str
@@ -124,6 +121,3 @@ class ExportResponse(BaseModel):
     slice_count: int
     is_verified: bool
     created_at: datetime
-
-    class Config:
-        from_attributes = True

@@ -7,30 +7,43 @@ from backend.app.models.asset import Job
 from backend.app.schemas.asset import JobResponse
 from backend.app.workers.job_runner import job_runner
 
+from backend.app.core.security import get_current_user_id, verify_project_access
+
 router = APIRouter(tags=["Jobs & Tasks"])
 
 @router.get("/jobs/{job_id}", response_model=JobResponse)
 async def get_job_status(
     job_id: str,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id)
 ):
     stmt = select(Job).where(Job.id == job_id)
     res = await db.execute(stmt)
     job = res.scalar_one_or_none()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
+
+    await verify_project_access(job.project_id, user_id, db)
     return job
 
 @router.post("/jobs/{job_id}/cancel", response_model=JobResponse)
 async def cancel_job(
     job_id: str,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id)
 ):
+    stmt = select(Job).where(Job.id == job_id)
+    res = await db.execute(stmt)
+    job = res.scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found.")
+
+    await verify_project_access(job.project_id, user_id, db)
+
     cancelled = await job_runner.cancel_job(job_id)
     if not cancelled:
         raise HTTPException(status_code=400, detail="Job could not be cancelled or has already completed.")
 
-    stmt = select(Job).where(Job.id == job_id)
     res = await db.execute(stmt)
     job = res.scalar_one_or_none()
     return job
@@ -38,8 +51,10 @@ async def cancel_job(
 @router.get("/projects/{project_id}/jobs", response_model=List[JobResponse])
 async def list_project_jobs(
     project_id: str,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id)
 ):
+    await verify_project_access(project_id, user_id, db)
     stmt = (
         select(Job)
         .where(Job.project_id == project_id)
@@ -48,3 +63,4 @@ async def list_project_jobs(
     )
     res = await db.execute(stmt)
     return res.scalars().all()
+

@@ -2,12 +2,15 @@ import asyncio
 import traceback
 from typing import Optional, Dict, Any
 from sqlalchemy import select, update
+from sqlalchemy.orm import selectinload
 from backend.app.core.config import settings
 from backend.app.core.logging import logger
 from backend.app.db.session import AsyncSessionLocal
 from backend.app.models.asset import Job, Asset, AssetVersion, GenerationRun
 from backend.app.models.adaptation import Panel
-from backend.app.models.style import StyleProfileVersion, ReferenceAsset
+from backend.app.models.style import StyleProfile, StyleProfileVersion, ReferenceAsset, CharacterReference
+from backend.app.models.bible import Character
+
 from backend.app.services.story_analysis import story_analysis_service
 from backend.app.services.style_analysis import style_analysis_service
 from backend.app.services.serialization import serialization_service
@@ -185,11 +188,11 @@ class JobRunner:
             if stage == "final" and not panel.is_approved:
                 raise ValueError(f"Approval gate failure: Cannot generate final illustration for unapproved panel {panel_id}.")
 
-            # Fetch active style profile
+            # Fetch active style profile scoped to this project (SEC-05)
             style_stmt = (
                 select(StyleProfileVersion)
-                .join(StyleProfileVersion.style_profile)
-                .where(StyleProfileVersion.style_profile_id == StyleProfileVersion.style_profile_id)
+                .join(StyleProfile, StyleProfileVersion.style_profile_id == StyleProfile.id)
+                .where(StyleProfile.project_id == job.project_id)
                 .order_by(StyleProfileVersion.version_number.desc())
             )
             style_res = await session.execute(style_stmt)
@@ -199,6 +202,49 @@ class JobRunner:
                 "palette_and_colors": style_ver.palette_and_colors if style_ver else ["#1A1D24", "#2E3A4D"],
                 "shading_and_lighting": style_ver.shading_and_lighting if style_ver else "Soft cell shading"
             }
+
+            # Retrieve character references for characters in this panel (Priority 1 & Section 13)
+            character_refs_payload = []
+            char_ref_ids = []
+            if panel.character_ids:
+                char_stmt = select(Character).where(Character.id.in_(panel.character_ids))
+                char_res = await session.execute(char_stmt)
+                chars = char_res.scalars().all()
+                for c in chars:
+                    cr_stmt = (
+                        select(CharacterReference)
+                        .options(selectinload(CharacterReference.reference_asset))
+                        .where(CharacterReference.character_id == c.id)
+                    )
+                    cr_res = await session.execute(cr_stmt)
+                    crefs = cr_res.scalars().all()
+                    ref_assets = []
+                    for cr in crefs:
+                        char_ref_ids.append(cr.id)
+                        if cr.reference_asset:
+                            ref_assets.append({
+                                "reference_asset_id": cr.reference_asset_id,
+                                "storage_key": cr.reference_asset.storage_key,
+                                "label": cr.reference_asset.label,
+                                "is_primary": cr.is_primary_sheet
+                            })
+                    active_ver = None
+                    if c.versions:
+                        if c.active_version_id:
+                            active_ver = next((v for v in c.versions if v.id == c.active_version_id), c.versions[0])
+                        else:
+                            active_ver = c.versions[0]
+
+                    character_refs_payload.append({
+                        "character_id": c.id,
+                        "canonical_name": c.canonical_name,
+                        "appearance": active_ver.physical_appearance if active_ver else "",
+                        "hair": active_ver.hair_style_and_color if active_ver else "",
+                        "clothing": active_ver.clothing_and_accessories if active_ver else "",
+                        "distinctive_features": active_ver.distinctive_features if active_ver else "",
+                        "reference_assets": ref_assets
+                    })
+
 
             img_provider = provider_factory.get_image_provider(p.get("provider_override"))
             panel_spec = {
@@ -216,14 +262,14 @@ class JobRunner:
                 raw_bytes, meta = await img_provider.generate_draft(
                     panel_spec=panel_spec,
                     style_profile=style_data,
-                    character_refs=[],
+                    character_refs=character_refs_payload,
                     aspect_ratio=panel.aspect_ratio
                 )
             else:
                 raw_bytes, meta = await img_provider.generate_final(
                     panel_spec=panel_spec,
                     style_profile=style_data,
-                    character_refs=[],
+                    character_refs=character_refs_payload,
                     aspect_ratio=panel.aspect_ratio
                 )
 
@@ -262,7 +308,7 @@ class JobRunner:
                 model_settings={},
                 prompt_used=meta.get("prompt_used", ""),
                 style_profile_version=style_ver.version_number if style_ver else 1,
-                character_reference_ids=[],
+                character_reference_ids=char_ref_ids,
                 estimated_cost_usd=meta.get("cost_usd", 0.0),
                 actual_cost_usd=meta.get("cost_usd", 0.0),
                 duration_seconds=meta.get("duration_seconds", 0.5),
@@ -280,7 +326,7 @@ class JobRunner:
                 panel_version=panel.version,
                 style_profile_id=style_ver.style_profile_id if style_ver else "none",
                 style_version=style_ver.version_number if style_ver else 1,
-                character_refs=[]
+                character_refs=character_refs_payload
             )
 
             # Assign active asset to panel

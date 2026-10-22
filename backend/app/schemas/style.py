@@ -1,8 +1,10 @@
 from typing import Optional, List, Dict, Any
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 class ReferenceAssetResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     project_id: str
     filename: str
@@ -16,10 +18,9 @@ class ReferenceAssetResponse(BaseModel):
     is_active: bool
     created_at: datetime
 
-    class Config:
-        from_attributes = True
-
 class StyleProfileVersionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     style_profile_id: str
     version_number: int
@@ -40,9 +41,6 @@ class StyleProfileVersionResponse(BaseModel):
     approved_by: Optional[str]
     created_at: datetime
 
-    class Config:
-        from_attributes = True
-
 class StyleProfileUpdate(BaseModel):
     linework_and_contours: Optional[str] = None
     anatomy_and_proportions: Optional[str] = None
@@ -58,14 +56,13 @@ class StyleProfileUpdate(BaseModel):
     uncertainties: Optional[List[Any]] = None
 
 class StyleProfileResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     project_id: str
     current_version: int
     status: str
     versions: List[StyleProfileVersionResponse] = []
-
-    class Config:
-        from_attributes = True
 
 class CharacterReferenceCreate(BaseModel):
     character_id: str
@@ -75,12 +72,11 @@ class CharacterReferenceCreate(BaseModel):
     is_primary_sheet: bool = False
 
 class CharacterReferenceResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     character_id: str
     reference_asset_id: str
     character_version_id: Optional[str]
     relevance_notes: str
     is_primary_sheet: bool
-
-    class Config:
-        from_attributes = True

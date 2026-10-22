@@ -9,17 +9,17 @@ from backend.app.schemas.bible import StoryBibleResponse, StoryBibleUpdate
 from backend.app.schemas.asset import JobResponse
 from backend.app.workers.job_runner import job_runner
 
+from backend.app.core.security import get_current_user_id, verify_project_access
+
 router = APIRouter(tags=["Story Analysis"])
 
 @router.post("/projects/{project_id}/analysis-jobs", response_model=JobResponse, status_code=status.HTTP_202_ACCEPTED)
 async def trigger_story_analysis(
     project_id: str,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id)
 ):
-    stmt = select(Project).where(Project.id == project_id)
-    res = await db.execute(stmt)
-    if not res.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Project not found.")
+    await verify_project_access(project_id, user_id, db)
 
     job = await job_runner.create_job(
         project_id=project_id,
@@ -31,8 +31,10 @@ async def trigger_story_analysis(
 @router.get("/projects/{project_id}/story-bible", response_model=StoryBibleResponse)
 async def get_story_bible(
     project_id: str,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id)
 ):
+    await verify_project_access(project_id, user_id, db)
     stmt = (
         select(StoryBible)
         .options(
@@ -54,7 +56,8 @@ async def get_story_bible(
 async def update_story_bible(
     bible_id: str,
     data: StoryBibleUpdate,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id)
 ):
     stmt = (
         select(StoryBible)
@@ -71,9 +74,12 @@ async def update_story_bible(
     if not bible:
         raise HTTPException(status_code=404, detail="Story bible not found.")
 
+    await verify_project_access(bible.project_id, user_id, db)
+
     for field, val in data.model_dump(exclude_unset=True).items():
         setattr(bible, field, val)
 
     await db.commit()
     await db.refresh(bible)
     return bible
+
