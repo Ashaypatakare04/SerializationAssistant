@@ -88,14 +88,17 @@ Open your browser to: `http://localhost:3000`
 
 ## 5. Running Automated Acceptance & Security Tests
 
-The test suite validates all 17 non-negotiable acceptance, security, and remediation tests with **zero warnings**:
+The test suite validates all 22 non-negotiable acceptance, security, workflow, and remediation tests with **zero warnings**:
 
 ```bash
-# Run complete backend test suite (17 passed in ~10s)
+# Run complete backend test suite (22 passed in ~13s)
 .\backend\venv\Scripts\pytest backend\tests -v
 
-# Run visual benchmark harness
+# Run 8-panel pilot character consistency visual benchmark harness
 .\backend\venv\Scripts\python scripts\visual_benchmark.py
+
+# Apply database migrations
+.\backend\venv\Scripts\alembic upgrade head
 
 # Run frontend lint and production build verification
 cd frontend
@@ -104,7 +107,7 @@ npm run build
 cd ..
 ```
 
-### Test Coverage Summary (17/17 Passed)
+### Test Coverage Summary (22/22 Passed)
 - **Test 1**: Story fidelity & character preservation with source locators (`test_01_story_fidelity.py`).
 - **Test 2**: Reference isolation: style extracted without narrative borrowing (`test_02_reference_isolation.py`).
 - **Test 3**: Style profile versioning & attribute modifications (`test_03_04_style_character.py`).
@@ -122,6 +125,11 @@ cd ..
 - **Test 15**: Honest provider configuration: unconfigured real providers fail loudly (`test_13_security_and_remediations.py`).
 - **Test 16**: Strict export approval gates: unapproved panels rejected by default (`test_13_security_and_remediations.py`).
 - **Test 17**: Character reference and dependency propagation in generation worker (`test_13_security_and_remediations.py`).
+- **Test 18**: Production identity fail-closed trust boundary & signed token verification (`test_14_phase2_validation.py`).
+- **Test 19**: Static storage endpoint cross-user isolation and ownership verification (`test_14_phase2_validation.py`).
+- **Test 20**: Real provider adapter contracts and capability truth (DALL-E 3, SD3, Gemini) (`test_14_phase2_validation.py`).
+- **Test 21**: End-to-end approval gate enforcement and vertical webtoon export packaging (`test_14_phase2_validation.py`).
+- **Test 22**: Job recovery idempotency without approval corruption (`test_14_phase2_validation.py`).
 
 ---
 
@@ -129,22 +137,28 @@ cd ..
 
 The platform enforces zero-trust boundaries across storage and compute:
 - **Object-Level Authorization (BOLA/IDOR)**: Every endpoint validates ownership via `verify_project_access`, preventing cross-user inspection or manipulation of projects, storyboards, and assets.
-- **Private Document Isolation**: Raw novel manuscripts uploaded to `storage/documents/` are strictly inaccessible via the static file router. Only whitelisted public visual assets (`references`, `assets`, `exports`) can be rendered.
+- **Fail-Closed Production Identity**: Arbitrary string identity assertion via `X-Studio-Auth` is strictly rejected in production. Cryptographically signed tokens (HMAC-SHA256) are required, and unconfigured production secrets fail closed (HTTP 500).
+- **Private Storage Isolation**: Static storage router (`/storage/{category}/{filename}`) requires authentication and verifies project ownership before serving references, assets, or exports. Raw manuscripts (`documents/`) are strictly blocked.
 - **Path Traversal Protection**: File paths are validated using Python's `target_path.resolve().relative_to(base.resolve())` to prevent directory traversal escapes.
-- **AI Provider Transparency**: Silent fallback from cloud providers (OpenAI, Gemini, Stability) to mock generation is eliminated. Non-configured providers raise explicit `RuntimeError`s.
+- **AI Provider Transparency**: Silent fallback from cloud providers to mock generation is eliminated. Non-configured providers raise explicit `RuntimeError`s.
 
 ---
 
 ## 7. Visual Benchmark Suite
 
-Run the automated visual benchmark evaluation suite across three core narrative test cases:
+Run the automated 8-panel pilot visual consistency evaluation suite:
 ```bash
 python scripts/visual_benchmark.py
 ```
-- **TC-01-ESTABLISHING-SHOT**: Evaluates background complexity, lighting, and environmental atmosphere.
-- **TC-02-CHARACTER-INTRODUCTION**: Evaluates anatomy, linework, and costume consistency.
-- **TC-03-EMOTIONAL-CLIMAX**: Evaluates dramatic lighting, expressions, and framing.
-Benchmark results and metadata are written to `storage/benchmarks/benchmark_summary.json`.
+- **TC-01-ESTABLISHING-SHOT**: Establishing shot (high angle, rain-slicked alley, atmospheric lighting).
+- **TC-02-CHARACTER-INTRODUCTION**: Recurring protagonist Min-jun introduction in slate trench coat.
+- **TC-03-CLOSEUP-VIGILANCE**: Close-up facial reaction highlighting silver eyes and eyebrow scar.
+- **TC-04-ACTION-CIPHER-DISCOVERY**: Interactive discovery of glowing cipher on iron hatch door.
+- **TC-05-ENVIRONMENT-TRANSITION**: Environment transition from cold exterior alley to warm underground vault.
+- **TC-06-MEDIUM-CAUTIOUS-ADVANCE**: Medium tactical advance with unholstered sidearm and silhouettes.
+- **TC-07-CLOSEUP-EMOTIONAL-CLIMAX**: Dramatic revelation and terminal shock (Min-jun & Soo-jin).
+- **TC-08-CLIFFHANGER-VERTICAL-REVEAL**: Extreme wide high-angle vertical reveal of the flooded vault floor.
+Benchmark results, image artifacts, and rubrics are written to `storage/benchmarks/pilot_consistency_benchmark.json`.
 
 ---
 
@@ -175,14 +189,20 @@ Benchmark results and metadata are written to `storage/benchmarks/benchmark_summ
 
 Exhaustive audit and engineering reports are available in `docs/`:
 
-### Audit Reports (`docs/audit/`)
-- [`docs/audit/FINAL_AUDIT_REPORT.md`](file:///c:/Users/patak/SerializationAssistant/docs/audit/FINAL_AUDIT_REPORT.md): Comprehensive executive summary, verification evidence, and final signoff.
-- [`docs/audit/REMEDIATION_LOG.md`](file:///c:/Users/patak/SerializationAssistant/docs/audit/REMEDIATION_LOG.md): Detailed itemized log of all 9 security, architectural, and quality fixes.
-- [`docs/audit/SECURITY_AUDIT.md`](file:///c:/Users/patak/SerializationAssistant/docs/audit/SECURITY_AUDIT.md): Security analysis, BOLA/IDOR remediation, and threat models.
-- [`docs/audit/ARCHITECTURE_GAP_MATRIX.md`](file:///c:/Users/patak/SerializationAssistant/docs/audit/ARCHITECTURE_GAP_MATRIX.md): Traceability matrix covering Sections 6.1 through 6.10.
-- [`docs/audit/ARTISTIC_FIDELITY_READINESS.md`](file:///c:/Users/patak/SerializationAssistant/docs/audit/ARTISTIC_FIDELITY_READINESS.md): Visual fidelity audit and benchmark rubric.
-- [`docs/audit/DEPLOYMENT_READINESS.md`](file:///c:/Users/patak/SerializationAssistant/docs/audit/DEPLOYMENT_READINESS.md): PostgreSQL migration, async lifecycle, and container decoupling analysis.
-- [`docs/audit/BASELINE_REPORT.md`](file:///c:/Users/patak/SerializationAssistant/docs/audit/BASELINE_REPORT.md): Initial baseline inventory and test execution report.
+### Phase 2 Reports (`docs/phase2/`)
+- [`docs/phase2/E2E_VALIDATION.md`](file:///c:/Users/patak/SerializationAssistant/docs/phase2/E2E_VALIDATION.md): Full walkthrough and verification of all 10 creator workflows.
+- [`docs/phase2/SECURITY_VERIFICATION.md`](file:///c:/Users/patak/SerializationAssistant/docs/phase2/SECURITY_VERIFICATION.md): Identity boundaries, production zero-trust auth, and storage isolation.
+- [`docs/phase2/REAL_PROVIDER_STATUS.md`](file:///c:/Users/patak/SerializationAssistant/docs/phase2/REAL_PROVIDER_STATUS.md): Honest capability matrix and API contracts for OpenAI, Stability, and Gemini.
+- [`docs/phase2/VISUAL_BENCHMARK_RESULTS.md`](file:///c:/Users/patak/SerializationAssistant/docs/phase2/VISUAL_BENCHMARK_RESULTS.md): 8-panel recurring character consistency pilot benchmark results.
+- [`docs/phase2/DEPLOYMENT_GAPS.md`](file:///c:/Users/patak/SerializationAssistant/docs/phase2/DEPLOYMENT_GAPS.md): Alembic migrations, PostgreSQL evaluation, and production deployment gaps.
+- [`docs/phase2/REMEDIATION_LOG.md`](file:///c:/Users/patak/SerializationAssistant/docs/phase2/REMEDIATION_LOG.md): Itemized log of all Phase 2 remediations and test proofs.
+
+### Baseline Audit Reports (`docs/audit/`)
+- [`docs/audit/FINAL_AUDIT_REPORT.md`](file:///c:/Users/patak/SerializationAssistant/docs/audit/FINAL_AUDIT_REPORT.md): Comprehensive executive summary and initial signoff.
+- [`docs/audit/REMEDIATION_LOG.md`](file:///c:/Users/patak/SerializationAssistant/docs/audit/REMEDIATION_LOG.md): Phase 1 itemized fix log.
+- [`docs/audit/SECURITY_AUDIT.md`](file:///c:/Users/patak/SerializationAssistant/docs/audit/SECURITY_AUDIT.md): Initial security review and BOLA analysis.
+- [`docs/audit/ARCHITECTURE_GAP_MATRIX.md`](file:///c:/Users/patak/SerializationAssistant/docs/audit/ARCHITECTURE_GAP_MATRIX.md): Traceability matrix for Sections 6.1 through 6.10.
+- [`docs/audit/DEPLOYMENT_READINESS.md`](file:///c:/Users/patak/SerializationAssistant/docs/audit/DEPLOYMENT_READINESS.md): Async lifecycle and container decoupling analysis.
 
 ### Core Architecture (`docs/`)
 - [`docs/ARCHITECTURE.md`](file:///c:/Users/patak/SerializationAssistant/docs/ARCHITECTURE.md): Service boundaries, modular monolith design, and background workers.

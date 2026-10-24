@@ -156,7 +156,7 @@ export const api = {
     request<FullQAReport>(`/episodes/${episodeId}/qa-report`),
 
   // Export
-  triggerExport: (episodeId: string, requireApproved = false) =>
+  triggerExport: (episodeId: string, requireApproved = true) =>
     request<Job>(`/episodes/${episodeId}/export-jobs?require_all_approved=${requireApproved}`, {
       method: "POST",
     }),

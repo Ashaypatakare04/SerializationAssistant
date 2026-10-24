@@ -1,6 +1,6 @@
 import os
-from typing import List
-from pydantic import Field
+from typing import List, Any, Union
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -12,12 +12,25 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "dev-secret-key-studio-insecure-only-for-local"
     
     # CORS
-    ALLOWED_ORIGINS: List[str] = [
+    ALLOWED_ORIGINS: Union[List[str], str] = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "http://localhost:8000",
         "http://127.0.0.1:8000"
     ]
+
+    @field_validator("ALLOWED_ORIGINS", mode="after")
+    @classmethod
+    def assemble_cors_origins(cls, v: Any) -> List[str]:
+        if isinstance(v, str):
+            if v.strip().startswith("[") and v.strip().endswith("]"):
+                try:
+                    import json
+                    return json.loads(v)
+                except Exception:
+                    pass
+            return [i.strip() for i in v.split(",") if i.strip()]
+        return v
     
     # Persistence
     DATABASE_URL: str = "sqlite+aiosqlite:///./storage/studio.db"

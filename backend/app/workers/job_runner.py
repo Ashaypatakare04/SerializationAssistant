@@ -129,7 +129,9 @@ class JobRunner:
                 res = await session.execute(stmt)
                 job = res.scalar_one_or_none()
                 if job:
-                    if job.retry_count < job.max_retries:
+                    # Non-retryable errors: validation rules, approval gate checks, client parameter errors
+                    is_validation_error = isinstance(e, (ValueError, KeyError, TypeError)) or "approval" in str(e).lower()
+                    if job.retry_count < job.max_retries and not is_validation_error:
                         job.retry_count += 1
                         job.status = "queued"
                         job.stage_description = f"Retrying after transient error: {str(e)}"
@@ -138,7 +140,7 @@ class JobRunner:
                     else:
                         job.status = "failed"
                         job.error_message = str(e)
-                        job.stage_description = f"Failed: {str(e)}"
+                        job.stage_description = f"Execution failed: {str(e)}"
                     await session.commit()
         finally:
             if job_id in self._running_tasks:

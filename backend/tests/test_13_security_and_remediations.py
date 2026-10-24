@@ -4,6 +4,7 @@ from httpx import AsyncClient
 from PIL import Image
 from sqlalchemy import select
 from backend.app.db.session import AsyncSessionLocal
+from backend.app.core.config import settings
 from backend.app.models.asset import AssetVersion, AssetDependency
 from backend.app.providers.factory import provider_factory
 from backend.tests.conftest import wait_for_job
@@ -64,12 +65,14 @@ async def test_02_storage_private_document_category_blocked(client: AsyncClient)
     assert "not permitted" in res.json()["detail"]
 
 @pytest.mark.asyncio
-async def test_03_unconfigured_real_provider_fails_honestly(client: AsyncClient):
+async def test_03_unconfigured_real_provider_fails_honestly(client: AsyncClient, monkeypatch):
     """
     SEC-03 & Principle 2.F Regression Test:
     Requesting an unconfigured real provider must raise an explicit error
     rather than silently returning a mock provider.
     """
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "")
+    monkeypatch.setattr(settings, "STABILITY_API_KEY", "")
     with pytest.raises(RuntimeError) as exc_info:
         provider_factory.get_llm_provider("openai")
     assert "OPENAI_API_KEY is not configured" in str(exc_info.value)

@@ -83,8 +83,11 @@ export const WebtoonReader: React.FC<WebtoonReaderProps> = ({
     setMessage(null);
     setExportDownloadUrl(null);
     try {
-      const job = await api.triggerExport(episode.id, false);
+      const job = await api.triggerExport(episode.id, true);
       const finishedJob = await api.pollJob(job.id);
+      if (finishedJob.status === "failed") {
+        throw new Error(finishedJob.error_message || "Export failed: All panels must be approved before publishing.");
+      }
       const exportId = finishedJob.result_data?.export_id;
       if (exportId) {
         const downloadUrl = `http://127.0.0.1:8000/api/v1/exports/${exportId}/download`;
@@ -96,7 +99,7 @@ export const WebtoonReader: React.FC<WebtoonReaderProps> = ({
       }
       await onRefresh();
     } catch (err: any) {
-      setMessage({ type: "error", text: err.message || "Export failed." });
+      setMessage({ type: "error", text: err.message || "Export failed: All panels must be approved before publishing." });
     } finally {
       setIsExporting(false);
     }
