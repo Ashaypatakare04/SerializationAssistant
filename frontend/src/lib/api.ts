@@ -144,8 +144,14 @@ export const api = {
     while (true) {
       const job = await request<Job>(`/jobs/${jobId}`);
       if (onProgress) onProgress(job);
-      if (job.status === "completed" || job.status === "failed" || job.status === "cancelled") {
+      if (job.status === "completed") {
         return job;
+      }
+      if (job.status === "failed") {
+        throw new Error(job.error_message || `Background job ${jobId} failed.`);
+      }
+      if (job.status === "cancelled") {
+        throw new Error(`Background job ${jobId} was cancelled.`);
       }
       await new Promise((r) => setTimeout(r, intervalMs));
     }

@@ -33,7 +33,7 @@ async def serve_stored_file(
         from backend.app.models.style import ReferenceAsset
         stmt = select(ReferenceAsset.project_id).where(ReferenceAsset.storage_key == rel_key)
         res = await db.execute(stmt)
-        project_id = res.scalar_one_or_none()
+        project_id = res.scalars().first()
     elif category == "assets":
         from backend.app.models.asset import AssetVersion, Asset
         stmt = (
@@ -42,12 +42,12 @@ async def serve_stored_file(
             .where(AssetVersion.storage_key == rel_key)
         )
         res = await db.execute(stmt)
-        project_id = res.scalar_one_or_none()
+        project_id = res.scalars().first()
     elif category == "exports":
         from backend.app.models.asset import Export
         stmt = select(Export.project_id).where(Export.storage_key == rel_key)
         res = await db.execute(stmt)
-        project_id = res.scalar_one_or_none()
+        project_id = res.scalars().first()
 
     if project_id:
         await verify_project_access(project_id, user_id, db)

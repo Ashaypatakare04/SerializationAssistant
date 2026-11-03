@@ -132,16 +132,22 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
 
   const handleGenerateAllDrafts = async () => {
     setMessage(null);
+    let successCount = 0;
     try {
       for (const p of allPanels) {
         const job = await api.triggerPanelGeneration(p.id, "draft");
         await api.pollJob(job.id);
+        successCount++;
       }
-      setMessage({ type: "success", text: "All draft illustrations generated successfully!" });
+      setMessage({ type: "success", text: `All ${allPanels.length} draft illustrations generated successfully!` });
       await onRefresh();
       onProceedToReview();
     } catch (err: any) {
-      setMessage({ type: "error", text: err.message || "Batch draft generation encountered an issue." });
+      await onRefresh();
+      setMessage({
+        type: "error",
+        text: `Generated ${successCount} of ${allPanels.length} panels. Failed at Panel ${allPanels[successCount]?.panel_number || successCount + 1}: ${err.message}`
+      });
     }
   };
 
