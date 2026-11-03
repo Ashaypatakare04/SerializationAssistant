@@ -2,6 +2,7 @@ import json
 import httpx
 from typing import Dict, Any, List, Optional, Tuple
 from backend.app.core.config import settings
+from backend.app.core.retry import with_retry
 from backend.app.providers.base import BaseLLMProvider
 
 class GeminiProvider(BaseLLMProvider):
@@ -38,12 +39,16 @@ class GeminiProvider(BaseLLMProvider):
                 "temperature": 0.4
             }
         }
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.post(url, json=payload)
-            resp.raise_for_status()
-            data = resp.json()
-            raw_text = data["candidates"][0]["content"]["parts"][0]["text"]
-            return json.loads(raw_text)
+
+        async def _call():
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                resp = await client.post(url, json=payload)
+                resp.raise_for_status()
+                data = resp.json()
+                raw_text = data["candidates"][0]["content"]["parts"][0]["text"]
+                return json.loads(raw_text)
+
+        return await with_retry(_call, operation_name="Gemini API")
 
     async def analyze_story(self, manuscript_text: str, project_config: Dict[str, Any]) -> Dict[str, Any]:
         system = "You are a webtoon adaptation editor. Extract story bible JSON with keys: premise, canonical_characters, major_events, relationships."

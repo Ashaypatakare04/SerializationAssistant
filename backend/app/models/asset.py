@@ -1,10 +1,13 @@
 from typing import Optional, List
-from sqlalchemy import String, Text, ForeignKey, JSON, Integer, Boolean, Float
+from sqlalchemy import String, Text, ForeignKey, JSON, Integer, Boolean, Float, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from backend.app.models.base import Base, TimestampMixin, generate_uuid
 
 class Asset(Base, TimestampMixin):
     __tablename__ = "assets"
+    __table_args__ = (
+        UniqueConstraint("panel_id", "asset_type", name="uq_panel_asset_type"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
     project_id: Mapped[str] = mapped_column(String(36), ForeignKey("projects.id"), nullable=False)

@@ -282,7 +282,11 @@ class JobRunner:
             )
 
             # Create or update Asset and AssetVersion records
-            asset_stmt = select(Asset).where(Asset.panel_id == panel.id).order_by(Asset.created_at.desc())
+            asset_stmt = (
+                select(Asset)
+                .where(Asset.panel_id == panel.id, Asset.asset_type == "panel_illustration")
+                .order_by(Asset.created_at.desc())
+            )
             asset_res = await session.execute(asset_stmt)
             asset = asset_res.scalars().first()
             if not asset:

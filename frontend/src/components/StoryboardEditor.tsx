@@ -14,7 +14,11 @@ import {
   Edit2,
   Save,
   Play,
-  ArrowRight
+  ArrowRight,
+  DollarSign,
+  AlertTriangle,
+  X,
+  Loader2
 } from "lucide-react";
 
 interface StoryboardEditorProps {
@@ -37,6 +41,10 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
   const [isGeneratingStoryboard, setIsGeneratingStoryboard] = useState(false);
   const [generatingDraftPanelId, setGeneratingDraftPanelId] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [showBatchModal, setShowBatchModal] = useState(false);
+  const [capabilities, setCapabilities] = useState<any>(null);
+  const [isBatchGenerating, setIsBatchGenerating] = useState(false);
+  const [batchProgress, setBatchProgress] = useState<{ current: number; total: number } | null>(null);
 
   if (!episode) {
     return (
@@ -130,11 +138,25 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
     }
   };
 
-  const handleGenerateAllDrafts = async () => {
+  const handleOpenBatchModal = async () => {
+    try {
+      const caps = await api.getCapabilities();
+      setCapabilities(caps);
+    } catch (err) {
+      console.error("Failed to fetch engine capabilities", err);
+    }
+    setShowBatchModal(true);
+  };
+
+  const handleExecuteBatchDrafts = async () => {
+    setShowBatchModal(false);
+    setIsBatchGenerating(true);
     setMessage(null);
     let successCount = 0;
     try {
-      for (const p of allPanels) {
+      for (let i = 0; i < allPanels.length; i++) {
+        const p = allPanels[i];
+        setBatchProgress({ current: i + 1, total: allPanels.length });
         const job = await api.triggerPanelGeneration(p.id, "draft");
         await api.pollJob(job.id);
         successCount++;
@@ -148,6 +170,9 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
         type: "error",
         text: `Generated ${successCount} of ${allPanels.length} panels. Failed at Panel ${allPanels[successCount]?.panel_number || successCount + 1}: ${err.message}`
       });
+    } finally {
+      setIsBatchGenerating(false);
+      setBatchProgress(null);
     }
   };
 
@@ -178,11 +203,16 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
           ) : (
             <>
               <button
-                onClick={handleGenerateAllDrafts}
-                className="flex items-center space-x-1.5 px-3.5 py-2 rounded-lg bg-studio-800 hover:bg-studio-700 border border-studio-700 text-xs font-semibold text-studio-200 transition"
+                onClick={handleOpenBatchModal}
+                disabled={isBatchGenerating}
+                className="flex items-center space-x-1.5 px-3.5 py-2 rounded-lg bg-studio-800 hover:bg-studio-700 border border-studio-700 text-xs font-semibold text-studio-200 transition disabled:opacity-50"
               >
-                <Play className="w-3.5 h-3.5 text-studio-cyan" />
-                <span>Generate All Drafts</span>
+                {isBatchGenerating ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-studio-cyan" />
+                ) : (
+                  <Play className="w-3.5 h-3.5 text-studio-cyan" />
+                )}
+                <span>{isBatchGenerating ? "Generating Drafts..." : "Generate All Drafts"}</span>
               </button>
 
               <button
@@ -196,6 +226,20 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
           )}
         </div>
       </div>
+
+      {isBatchGenerating && batchProgress && (
+        <div className="p-3.5 rounded-xl text-xs font-medium mb-5 bg-studio-800/90 border border-studio-cyan/40 text-studio-cyan flex items-center justify-between shadow-lg">
+          <div className="flex items-center space-x-2.5">
+            <Loader2 className="w-4 h-4 animate-spin text-studio-cyan" />
+            <span>
+              Generating Draft Artwork: Panel <strong>{batchProgress.current}</strong> of <strong>{batchProgress.total}</strong>...
+            </span>
+          </div>
+          <span className="text-[11px] font-mono bg-studio-900 px-2.5 py-1 rounded-md border border-studio-700 text-studio-300">
+            {Math.round((batchProgress.current / batchProgress.total) * 100)}%
+          </span>
+        </div>
+      )}
 
       {message && (
         <div
@@ -407,6 +451,84 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Batch Generation Cost & Confirmation Modal */}
+      {showBatchModal && (
+        <div className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-4">
+          <div className="bg-studio-850 border border-studio-700 rounded-2xl max-w-md w-full shadow-2xl overflow-hidden p-6 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-studio-750">
+              <div className="flex items-center space-x-2">
+                <Play className="w-5 h-5 text-studio-cyan" />
+                <h3 className="font-bold text-white text-base">Confirm Batch Draft Generation</h3>
+              </div>
+              <button
+                onClick={() => setShowBatchModal(false)}
+                className="p-1.5 rounded-lg bg-studio-800 hover:bg-studio-700 text-studio-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="p-3 bg-studio-900 border border-studio-800 rounded-xl space-y-1.5">
+                <div className="flex justify-between">
+                  <span className="text-studio-400">Target Episode:</span>
+                  <span className="font-semibold text-white">{episode.title}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-studio-400">Total Panels:</span>
+                  <span className="font-bold text-studio-cyan">{allPanels.length} Panels</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-studio-400">Active Engine:</span>
+                  <span className="font-bold uppercase text-white">
+                    {capabilities?.active_image_provider || "MOCK"}
+                  </span>
+                </div>
+                <div className="flex justify-between border-t border-studio-800 pt-1.5 mt-1">
+                  <span className="text-studio-400">Estimated Cost:</span>
+                  <span className="font-bold text-emerald-400">
+                    {(capabilities?.active_image_provider || "mock") === "mock"
+                      ? "FREE ($0.00 USD)"
+                      : (capabilities?.active_image_provider === "stability")
+                      ? `~$${(0.03 * allPanels.length).toFixed(2)} USD`
+                      : `~$${(0.04 * allPanels.length).toFixed(2)} USD`}
+                  </span>
+                </div>
+              </div>
+
+              {(capabilities?.active_image_provider || "mock") !== "mock" ? (
+                <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-200 flex items-start space-x-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <span>
+                    <strong>Paid Cloud Provider:</strong> Ensure your external account balance has sufficient credits before launching this batch to prevent <code>402 Payment Required</code> errors.
+                  </span>
+                </div>
+              ) : (
+                <div className="p-2.5 bg-studio-900/60 border border-studio-800 rounded-xl text-studio-300 flex items-center space-x-2">
+                  <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>Zero-cost offline synthetic mode active. Fast procedural rendering without external API costs.</span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end space-x-2 pt-2 border-t border-studio-750">
+              <button
+                onClick={() => setShowBatchModal(false)}
+                className="px-3 py-1.5 rounded-lg bg-studio-800 hover:bg-studio-700 text-xs font-medium text-studio-300"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleExecuteBatchDrafts}
+                className="px-4 py-1.5 rounded-lg bg-studio-accent hover:bg-studio-accentHover text-xs font-semibold text-white shadow"
+              >
+                Start Batch ({allPanels.length} Panels)
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

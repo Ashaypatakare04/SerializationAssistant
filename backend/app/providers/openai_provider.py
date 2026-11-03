@@ -4,6 +4,7 @@ import base64
 import httpx
 from typing import Dict, Any, List, Optional, Tuple
 from backend.app.core.config import settings
+from backend.app.core.retry import with_retry
 from backend.app.providers.base import BaseLLMProvider, BaseImageProvider
 
 class OpenAIProvider(BaseLLMProvider, BaseImageProvider):
@@ -13,6 +14,18 @@ class OpenAIProvider(BaseLLMProvider, BaseImageProvider):
 
     def is_configured(self) -> bool:
         return bool(self.api_key and len(self.api_key) > 5 and not self.api_key.startswith("sk-your"))
+
+    async def _post_json_with_retry(self, endpoint: str, payload: dict, timeout: float = 60.0, operation_name: str = "OpenAI API") -> dict:
+        async def _call():
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                resp = await client.post(
+                    f"{self.base_url}{endpoint}",
+                    headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
+                    json=payload
+                )
+                resp.raise_for_status()
+                return resp.json()
+        return await with_retry(_call, operation_name=operation_name)
 
     def inspect_capabilities(self) -> Dict[str, Any]:
         configured = self.is_configured()
@@ -70,22 +83,19 @@ class OpenAIProvider(BaseLLMProvider, BaseImageProvider):
             "You are a master story editor adapting literary manuscripts into vertical webtoon story bibles. "
             "Output JSON with keys: premise, canonical_characters, major_events, relationships, continuity_rules."
         )
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.post(
-                f"{self.base_url}/chat/completions",
-                headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
-                json={
-                    "model": "gpt-4o",
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": f"Extract story bible from manuscript:\n\n{manuscript_text[:4000]}"}
-                    ],
-                    "response_format": {"type": "json_object"}
-                }
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            return json.loads(data["choices"][0]["message"]["content"])
+        data = await self._post_json_with_retry(
+            "/chat/completions",
+            payload={
+                "model": "gpt-4o",
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f"Extract story bible from manuscript:\n\n{manuscript_text[:4000]}"}
+                ],
+                "response_format": {"type": "json_object"}
+            },
+            operation_name="OpenAI analyze_story"
+        )
+        return json.loads(data["choices"][0]["message"]["content"])
 
     async def analyze_style(self, reference_descriptions: List[Dict[str, Any]]) -> Dict[str, Any]:
         if not self.is_configured():
@@ -96,62 +106,56 @@ class OpenAIProvider(BaseLLMProvider, BaseImageProvider):
             "Output JSON with keys: linework_and_contours, anatomy_and_proportions, facial_features_and_expressions, "
             "palette_and_colors, shading_and_lighting, texture_and_rendering, background_treatment, degree_of_stylization."
         )
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.post(
-                f"{self.base_url}/chat/completions",
-                headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
-                json={
-                    "model": "gpt-4o",
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": f"Reference descriptions:\n{json.dumps(reference_descriptions)}"}
-                    ],
-                    "response_format": {"type": "json_object"}
-                }
-            )
-            resp.raise_for_status()
-            return json.loads(resp.json()["choices"][0]["message"]["content"])
+        data = await self._post_json_with_retry(
+            "/chat/completions",
+            payload={
+                "model": "gpt-4o",
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f"Reference descriptions:\n{json.dumps(reference_descriptions)}"}
+                ],
+                "response_format": {"type": "json_object"}
+            },
+            operation_name="OpenAI analyze_style"
+        )
+        return json.loads(data["choices"][0]["message"]["content"])
 
     async def propose_adaptation(self, story_bible_data: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
         if not self.is_configured():
             raise RuntimeError("OpenAI provider not configured with API key.")
         
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.post(
-                f"{self.base_url}/chat/completions",
-                headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
-                json={
-                    "model": "gpt-4o",
-                    "messages": [
-                        {"role": "system", "content": "Propose webtoon adaptation arc and episodes in JSON format."},
-                        {"role": "user", "content": json.dumps(story_bible_data)}
-                    ],
-                    "response_format": {"type": "json_object"}
-                }
-            )
-            resp.raise_for_status()
-            return json.loads(resp.json()["choices"][0]["message"]["content"])
+        data = await self._post_json_with_retry(
+            "/chat/completions",
+            payload={
+                "model": "gpt-4o",
+                "messages": [
+                    {"role": "system", "content": "Propose webtoon adaptation arc and episodes in JSON format."},
+                    {"role": "user", "content": json.dumps(story_bible_data)}
+                ],
+                "response_format": {"type": "json_object"}
+            },
+            operation_name="OpenAI propose_adaptation"
+        )
+        return json.loads(data["choices"][0]["message"]["content"])
 
     async def generate_storyboard(self, episode_data: Dict[str, Any], story_bible_data: Dict[str, Any]) -> List[Dict[str, Any]]:
         if not self.is_configured():
             raise RuntimeError("OpenAI provider not configured with API key.")
         
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.post(
-                f"{self.base_url}/chat/completions",
-                headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
-                json={
-                    "model": "gpt-4o",
-                    "messages": [
-                        {"role": "system", "content": "Generate sequential webtoon panels list in JSON with key 'panels'."},
-                        {"role": "user", "content": json.dumps({"episode": episode_data, "bible": story_bible_data})}
-                    ],
-                    "response_format": {"type": "json_object"}
-                }
-            )
-            resp.raise_for_status()
-            result = json.loads(resp.json()["choices"][0]["message"]["content"])
-            return result.get("panels", [])
+        data = await self._post_json_with_retry(
+            "/chat/completions",
+            payload={
+                "model": "gpt-4o",
+                "messages": [
+                    {"role": "system", "content": "Generate sequential webtoon panels list in JSON with key 'panels'."},
+                    {"role": "user", "content": json.dumps({"episode": episode_data, "bible": story_bible_data})}
+                ],
+                "response_format": {"type": "json_object"}
+            },
+            operation_name="OpenAI generate_storyboard"
+        )
+        result = json.loads(data["choices"][0]["message"]["content"])
+        return result.get("panels", [])
 
     async def generate_draft(
         self,
@@ -166,23 +170,21 @@ class OpenAIProvider(BaseLLMProvider, BaseImageProvider):
         prompt = self._build_image_prompt(panel_spec, style_profile, character_refs)
         size = "1024x1792" if aspect_ratio in ("4:5", "9:16") else "1024x1024"
 
-        async with httpx.AsyncClient(timeout=90.0) as client:
-            resp = await client.post(
-                f"{self.base_url}/images/generations",
-                headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
-                json={
-                    "model": "dall-e-3",
-                    "prompt": prompt,
-                    "n": 1,
-                    "size": size,
-                    "quality": "standard",
-                    "response_format": "b64_json"
-                }
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            b64_data = data["data"][0]["b64_json"]
-            raw_bytes = base64.b64decode(b64_data)
+        data = await self._post_json_with_retry(
+            "/images/generations",
+            payload={
+                "model": "dall-e-3",
+                "prompt": prompt,
+                "n": 1,
+                "size": size,
+                "quality": "standard",
+                "response_format": "b64_json"
+            },
+            timeout=90.0,
+            operation_name="OpenAI DALL-E 3 generate_draft"
+        )
+        b64_data = data["data"][0]["b64_json"]
+        raw_bytes = base64.b64decode(b64_data)
 
         metadata = {
             "provider": "openai",
@@ -210,23 +212,21 @@ class OpenAIProvider(BaseLLMProvider, BaseImageProvider):
         prompt = self._build_image_prompt(panel_spec, style_profile, character_refs)
         size = "1024x1792" if aspect_ratio in ("4:5", "9:16") else "1024x1024"
 
-        async with httpx.AsyncClient(timeout=90.0) as client:
-            resp = await client.post(
-                f"{self.base_url}/images/generations",
-                headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
-                json={
-                    "model": "dall-e-3",
-                    "prompt": prompt,
-                    "n": 1,
-                    "size": size,
-                    "quality": "hd",
-                    "response_format": "b64_json"
-                }
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            b64_data = data["data"][0]["b64_json"]
-            raw_bytes = base64.b64decode(b64_data)
+        data = await self._post_json_with_retry(
+            "/images/generations",
+            payload={
+                "model": "dall-e-3",
+                "prompt": prompt,
+                "n": 1,
+                "size": size,
+                "quality": "hd",
+                "response_format": "b64_json"
+            },
+            timeout=90.0,
+            operation_name="OpenAI DALL-E 3 generate_final"
+        )
+        b64_data = data["data"][0]["b64_json"]
+        raw_bytes = base64.b64decode(b64_data)
 
         metadata = {
             "provider": "openai",

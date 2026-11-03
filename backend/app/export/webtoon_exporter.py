@@ -3,6 +3,10 @@ import json
 import zipfile
 from typing import List, Dict, Any, Tuple
 from PIL import Image, ImageDraw, ImageFont
+
+# Protect against decompression bomb while allowing long webtoon strips
+Image.MAX_IMAGE_PIXELS = 100_000_000
+
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -93,81 +97,98 @@ class WebtoonExporter:
             raise ValueError(f"Cannot export: Missing illustrations for panels {missing_assets}. All panel illustrations must be generated and approved before export.")
 
 
-        # Prepare stitched long strip(s)
-        # 1. Calculate dimensions
+        # Prepare stitched long strip(s) via streaming memory-efficient slicing
         standard_width = 800
+        margin = 20
+        target_w = standard_width - (margin * 2)
         total_height = 0
-        prepared_slices: List[Image.Image] = []
-        
-        current_slice_img = Image.new("RGB", (standard_width, cls.MAX_SLICE_HEIGHT), color=(18, 20, 26))
-        current_y = 20
         slice_idx = 1
+        current_y = 20
         manifest_panels = []
+        font = ImageFont.load_default(size=14)
 
-        for p, orig_img in panel_images:
-            # Resize proportionally to match standard width (accounting for webtoon margins)
-            margin = 20
-            target_w = standard_width - (margin * 2)
-            aspect = orig_img.height / orig_img.width
-            target_h = int(target_w * aspect)
-            resized = orig_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
-
-            # Check if adding this panel + vertical spacing exceeds current slice height
-            spacing = p.vertical_spacing_after_px
-            if current_y + target_h + spacing > cls.MAX_SLICE_HEIGHT:
-                # Crop current slice to actual used height and start new slice
-                cropped = current_slice_img.crop((0, 0, standard_width, current_y))
-                prepared_slices.append(cropped)
-                total_height += current_y
-                current_slice_img = Image.new("RGB", (standard_width, cls.MAX_SLICE_HEIGHT), color=(18, 20, 26))
-                current_y = 20
-                slice_idx += 1
-
-            # Paste panel onto slice
-            current_slice_img.paste(resized, (margin, current_y))
-            
-            # Overlay dialogue/captions if present
-            draw = ImageDraw.Draw(current_slice_img)
-            for d in p.dialogues:
-                d_text = f"{d.speaker_name + ': ' if d.speaker_name else ''}{d.text_content}"
-                if d.segment_type == "caption":
-                    draw.rectangle([margin + 20, current_y + 20, margin + 20 + min(len(d_text) * 7 + 20, target_w - 40), current_y + 55], fill=(0, 0, 0, 200), outline=(255, 255, 255))
-                    draw.text((margin + 30, current_y + 30), d_text, fill=(255, 255, 255))
-                elif d.segment_type == "speech_bubble":
-                    draw.rounded_rectangle([margin + 30, current_y + target_h - 70, margin + 30 + min(len(d_text) * 7 + 30, target_w - 60), current_y + target_h - 25], radius=10, fill=(255, 255, 255), outline=(0, 0, 0), width=2)
-                    draw.text((margin + 42, current_y + target_h - 60), d_text, fill=(10, 10, 10))
-
-            manifest_panels.append({
-                "panel_number": p.panel_number,
-                "slice_index": slice_idx,
-                "y_offset_in_slice": current_y,
-                "height": target_h,
-                "shot_type": p.shot_type,
-                "dialogue_count": len(p.dialogues)
-            })
-
-            current_y += target_h + spacing
-
-        # Crop and save final slice
-        if current_y > 20:
-            cropped = current_slice_img.crop((0, 0, standard_width, current_y))
-            prepared_slices.append(cropped)
-            total_height += current_y
-
-        # Package into export ZIP: slices + individual panels + manifest.json
         zip_buf = io.BytesIO()
         with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
-            # Write slices
-            for s_i, sl_img in enumerate(prepared_slices):
-                buf = io.BytesIO()
-                sl_img.save(buf, format="JPEG", quality=92)
-                zf.writestr(f"slices/webtoon_slice_{s_i + 1:02d}.jpg", buf.getvalue())
+            current_slice_img = Image.new("RGB", (standard_width, cls.MAX_SLICE_HEIGHT), color=(18, 20, 26))
 
-            # Write individual panels
-            for p, p_img in panel_images:
-                buf = io.BytesIO()
-                p_img.save(buf, format="PNG")
-                zf.writestr(f"panels/panel_{p.panel_number:02d}.png", buf.getvalue())
+            for p, orig_img in panel_images:
+                # Stream individual panel PNG into ZIP immediately
+                p_buf = io.BytesIO()
+                orig_img.save(p_buf, format="PNG")
+                zf.writestr(f"panels/panel_{p.panel_number:02d}.png", p_buf.getvalue())
+                del p_buf
+
+                # Resize proportionally to match standard width (accounting for webtoon margins)
+                aspect = orig_img.height / orig_img.width
+                target_h = int(target_w * aspect)
+                resized = orig_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+
+                # Check if adding this panel + vertical spacing exceeds current slice height
+                spacing = p.vertical_spacing_after_px or 40
+                if current_y + target_h + spacing > cls.MAX_SLICE_HEIGHT:
+                    # Flush completed slice to ZIP and allocate fresh slice canvas
+                    cropped = current_slice_img.crop((0, 0, standard_width, current_y))
+                    s_buf = io.BytesIO()
+                    cropped.save(s_buf, format="JPEG", quality=92)
+                    zf.writestr(f"slices/webtoon_slice_{slice_idx:02d}.jpg", s_buf.getvalue())
+                    del s_buf
+                    del cropped
+                    del current_slice_img
+
+                    total_height += current_y
+                    slice_idx += 1
+                    current_slice_img = Image.new("RGB", (standard_width, cls.MAX_SLICE_HEIGHT), color=(18, 20, 26))
+                    current_y = 20
+
+                # Paste panel onto slice
+                current_slice_img.paste(resized, (margin, current_y))
+                del resized
+                
+                # Overlay dialogue/captions if present
+                draw = ImageDraw.Draw(current_slice_img)
+                for d in p.dialogues:
+                    d_text = f"{d.speaker_name + ': ' if d.speaker_name else ''}{d.text_content}"
+                    if d.segment_type == "caption":
+                        draw.rectangle(
+                            [margin + 20, current_y + 20, margin + 20 + min(len(d_text) * 8 + 20, target_w - 40), current_y + 55],
+                            fill=(0, 0, 0, 210),
+                            outline=(255, 255, 255)
+                        )
+                        draw.text((margin + 30, current_y + 28), d_text, fill=(255, 255, 255), font=font)
+                    elif d.segment_type == "speech_bubble":
+                        draw.rounded_rectangle(
+                            [margin + 30, current_y + target_h - 70, margin + 30 + min(len(d_text) * 8 + 30, target_w - 60), current_y + target_h - 25],
+                            radius=10,
+                            fill=(255, 255, 255),
+                            outline=(0, 0, 0),
+                            width=2
+                        )
+                        draw.text((margin + 42, current_y + target_h - 60), d_text, fill=(10, 10, 10), font=font)
+
+                manifest_panels.append({
+                    "panel_number": p.panel_number,
+                    "slice_index": slice_idx,
+                    "y_offset_in_slice": current_y,
+                    "height": target_h,
+                    "shot_type": p.shot_type,
+                    "dialogue_count": len(p.dialogues)
+                })
+
+                current_y += target_h + spacing
+
+            # Flush final slice to ZIP
+            if current_y > 20:
+                cropped = current_slice_img.crop((0, 0, standard_width, current_y))
+                s_buf = io.BytesIO()
+                cropped.save(s_buf, format="JPEG", quality=92)
+                zf.writestr(f"slices/webtoon_slice_{slice_idx:02d}.jpg", s_buf.getvalue())
+                del s_buf
+                del cropped
+                del current_slice_img
+                total_height += current_y
+                final_slice_count = slice_idx
+            else:
+                final_slice_count = slice_idx - 1
 
             # Write manifest.json
             manifest_data = {
@@ -177,7 +198,7 @@ class WebtoonExporter:
                 "total_panels": len(all_panels),
                 "total_height_px": total_height,
                 "width_px": standard_width,
-                "slice_count": len(prepared_slices),
+                "slice_count": final_slice_count,
                 "format": "vertical_webtoon_standard",
                 "panels": manifest_panels
             }
@@ -198,7 +219,7 @@ class WebtoonExporter:
             manifest_data=manifest_data,
             panel_count=len(all_panels),
             total_height_px=total_height,
-            slice_count=len(prepared_slices),
+            slice_count=final_slice_count,
             is_verified=True
         )
         db.add(export_record)

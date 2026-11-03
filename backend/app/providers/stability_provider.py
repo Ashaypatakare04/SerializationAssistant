@@ -2,6 +2,7 @@ import io
 import httpx
 from typing import Dict, Any, List, Optional, Tuple
 from backend.app.core.config import settings
+from backend.app.core.retry import with_retry
 from backend.app.providers.base import BaseImageProvider
 
 class StabilityProvider(BaseImageProvider):
@@ -72,22 +73,25 @@ class StabilityProvider(BaseImageProvider):
         prompt = self._build_prompt(panel_spec, style_profile, character_refs)
         ratio = "4:5" if aspect_ratio in ("4:5", "9:16") else "1:1"
 
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.post(
-                f"{self.base_url}/v2beta/stable-image/generate/core",
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Accept": "image/*"
-                },
-                files={"none": ""},
-                data={
-                    "prompt": prompt,
-                    "aspect_ratio": ratio,
-                    "output_format": "png"
-                }
-            )
-            resp.raise_for_status()
-            raw_bytes = resp.content
+        async def _call():
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                resp = await client.post(
+                    f"{self.base_url}/v2beta/stable-image/generate/core",
+                    headers={
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Accept": "image/*"
+                    },
+                    files={"none": ""},
+                    data={
+                        "prompt": prompt,
+                        "aspect_ratio": ratio,
+                        "output_format": "png"
+                    }
+                )
+                resp.raise_for_status()
+                return resp.content
+
+        raw_bytes = await with_retry(_call, operation_name="Stability AI generate_draft")
 
         metadata = {
             "provider": "stability",
@@ -129,18 +133,21 @@ class StabilityProvider(BaseImageProvider):
         else:
             files["none"] = ""
 
-        async with httpx.AsyncClient(timeout=90.0) as client:
-            resp = await client.post(
-                f"{self.base_url}/v2beta/stable-image/generate/sd3",
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Accept": "image/*"
-                },
-                files=files,
-                data=data
-            )
-            resp.raise_for_status()
-            raw_bytes = resp.content
+        async def _call_final():
+            async with httpx.AsyncClient(timeout=90.0) as client:
+                resp = await client.post(
+                    f"{self.base_url}/v2beta/stable-image/generate/sd3",
+                    headers={
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Accept": "image/*"
+                    },
+                    files=files,
+                    data=data
+                )
+                resp.raise_for_status()
+                return resp.content
+
+        raw_bytes = await with_retry(_call_final, operation_name="Stability AI generate_final")
 
         metadata = {
             "provider": "stability",
@@ -163,21 +170,24 @@ class StabilityProvider(BaseImageProvider):
         if not self.is_configured():
             raise RuntimeError("Stability AI provider not configured with API key.")
         
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.post(
-                f"{self.base_url}/v2beta/stable-image/edit/inpaint",
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Accept": "image/*"
-                },
-                files={"image": ("base.png", base_image_bytes, "image/png")},
-                data={
-                    "prompt": instruction,
-                    "output_format": "png"
-                }
-            )
-            resp.raise_for_status()
-            raw_bytes = resp.content
+        async def _call_inpaint():
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                resp = await client.post(
+                    f"{self.base_url}/v2beta/stable-image/edit/inpaint",
+                    headers={
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Accept": "image/*"
+                    },
+                    files={"image": ("base.png", base_image_bytes, "image/png")},
+                    data={
+                        "prompt": instruction,
+                        "output_format": "png"
+                    }
+                )
+                resp.raise_for_status()
+                return resp.content
+
+        raw_bytes = await with_retry(_call_inpaint, operation_name="Stability AI edit_image")
 
         metadata = {
             "provider": "stability",
