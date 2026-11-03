@@ -137,24 +137,80 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
-  // Jobs
+  // Jobs & SSE Streaming
   getJob: (jobId: string) => request<Job>(`/jobs/${jobId}`),
   cancelJob: (jobId: string) => request<Job>(`/jobs/${jobId}/cancel`, { method: "POST" }),
-  pollJob: async (jobId: string, onProgress?: (job: Job) => void, intervalMs = 800): Promise<Job> => {
+  
+  streamJob: async (jobId: string, onProgress?: (job: Job) => void): Promise<Job> => {
+    try {
+      const response = await fetch(`${API_BASE}/jobs/${jobId}/stream`, {
+        headers: {
+          "X-Studio-Auth": "creator_default_user",
+          "Accept": "text/event-stream",
+        },
+      });
+
+      if (!response.ok || !response.body) {
+        return await api._fallbackPollJob(jobId, onProgress);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const blocks = buffer.split("\n\n");
+        buffer = blocks.pop() || "";
+
+        for (const block of blocks) {
+          const dataLine = block.split("\n").find((l) => l.startsWith("data: "));
+          if (dataLine) {
+            const rawJson = dataLine.replace(/^data:\s*/, "");
+            const job: Job = JSON.parse(rawJson);
+            if (onProgress) onProgress(job);
+
+            if (job.status === "completed") {
+              reader.cancel();
+              return job;
+            }
+            if (job.status === "failed") {
+              reader.cancel();
+              throw new Error(job.error_message || `Background job ${jobId} failed.`);
+            }
+            if (job.status === "cancelled") {
+              reader.cancel();
+              throw new Error(`Background job ${jobId} was cancelled.`);
+            }
+          }
+        }
+      }
+
+      return await api.getJob(jobId);
+    } catch (err: any) {
+      if (err.message && (err.message.includes("failed") || err.message.includes("cancelled"))) {
+        throw err;
+      }
+      return await api._fallbackPollJob(jobId, onProgress);
+    }
+  },
+
+  _fallbackPollJob: async (jobId: string, onProgress?: (job: Job) => void, intervalMs = 800): Promise<Job> => {
     while (true) {
       const job = await request<Job>(`/jobs/${jobId}`);
       if (onProgress) onProgress(job);
-      if (job.status === "completed") {
-        return job;
-      }
-      if (job.status === "failed") {
-        throw new Error(job.error_message || `Background job ${jobId} failed.`);
-      }
-      if (job.status === "cancelled") {
-        throw new Error(`Background job ${jobId} was cancelled.`);
-      }
+      if (job.status === "completed") return job;
+      if (job.status === "failed") throw new Error(job.error_message || `Background job ${jobId} failed.`);
+      if (job.status === "cancelled") throw new Error(`Background job ${jobId} was cancelled.`);
       await new Promise((r) => setTimeout(r, intervalMs));
     }
+  },
+
+  pollJob: async (jobId: string, onProgress?: (job: Job) => void): Promise<Job> => {
+    return api.streamJob(jobId, onProgress);
   },
 
   // QA

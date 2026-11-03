@@ -1,5 +1,5 @@
 import os
-from typing import List, Any, Union
+from typing import List, Any, Union, Optional
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -32,9 +32,15 @@ class Settings(BaseSettings):
             return [i.strip() for i in v.split(",") if i.strip()]
         return v
     
-    # Persistence
+    # Persistence & Storage
     DATABASE_URL: str = "sqlite+aiosqlite:///./storage/studio.db"
     STORAGE_LOCAL_DIR: str = "./storage"
+    STORAGE_BACKEND: str = "local"  # "local", "s3"
+    S3_BUCKET_NAME: str = ""
+    S3_ENDPOINT_URL: Optional[str] = None
+    S3_REGION_NAME: str = "us-east-1"
+    S3_ACCESS_KEY_ID: str = ""
+    S3_SECRET_ACCESS_KEY: str = ""
     
     # AI Providers
     LLM_PROVIDER: str = "mock"  # "mock", "gemini", "openai", "anthropic"
@@ -50,6 +56,7 @@ class Settings(BaseSettings):
     # Job Engine
     MAX_CONCURRENT_JOBS: int = 4
     WORKER_POLL_INTERVAL_SECONDS: float = 1.0
+    STANDALONE_WORKER: bool = False
 
     model_config = SettingsConfigDict(env_file=".env", extra="allow")
 

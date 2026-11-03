@@ -48,9 +48,10 @@ class JobRunner:
             await session.refresh(job)
             job_id = job.id
 
-        # Schedule execution as background async task
-        task = asyncio.create_task(self.execute_job(job_id))
-        self._running_tasks[job_id] = task
+        # Schedule execution as background async task if in-process execution is active
+        if not settings.STANDALONE_WORKER:
+            task = asyncio.create_task(self.execute_job(job_id))
+            self._running_tasks[job_id] = task
         return job
 
     async def cancel_job(self, job_id: str) -> bool:
