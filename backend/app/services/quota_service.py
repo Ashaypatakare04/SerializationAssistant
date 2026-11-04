@@ -13,17 +13,25 @@ class QuotaService:
 
     async def get_usage_count(self, project_id: str, db: AsyncSession, hours: int = 24) -> int:
         since_time = datetime.now(timezone.utc) - timedelta(hours=hours)
-        # Handle naive datetime comparisons if sqlite stores timestamps without timezone
+        threshold_utc = since_time.replace(tzinfo=None)
+        
         stmt = (
-            select(func.count(Job.id))
+            select(Job.created_at)
             .where(
                 Job.project_id == project_id,
-                Job.job_type.in_(["draft_generation", "final_generation", "panel_edit"]),
-                Job.created_at >= since_time.replace(tzinfo=None)
+                Job.job_type.in_(["draft_generation", "final_generation", "panel_edit"])
             )
         )
         res = await db.execute(stmt)
-        return res.scalar() or 0
+        created_list = res.scalars().all()
+        
+        count = 0
+        for created in created_list:
+            if created:
+                dt = created.replace(tzinfo=None) if created.tzinfo else created
+                if dt >= threshold_utc:
+                    count += 1
+        return count
 
     async def check_generation_quota(
         self,

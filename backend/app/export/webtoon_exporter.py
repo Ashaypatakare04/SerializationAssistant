@@ -17,11 +17,24 @@ from backend.app.services.storage import storage_service
 
 def wrap_dialogue_text(text: str, max_chars_per_line: int = 30) -> List[str]:
     """Wraps dialogue text into cleanly sized lines for speech balloons."""
+    if not text:
+        return [""]
     words = text.split()
     lines = []
     current_line = []
     current_len = 0
     for w in words:
+        # Break individual words that exceed maximum line width
+        while len(w) > max_chars_per_line:
+            chunk = w[:max_chars_per_line]
+            if current_line:
+                lines.append(" ".join(current_line))
+                current_line = []
+                current_len = 0
+            lines.append(chunk)
+            w = w[max_chars_per_line:]
+        if not w:
+            continue
         if current_len + len(w) + (1 if current_line else 0) <= max_chars_per_line:
             current_line.append(w)
             current_len += len(w) + (1 if len(current_line) > 1 else 0)

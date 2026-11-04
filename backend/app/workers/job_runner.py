@@ -420,6 +420,6 @@ class JobRunner:
             )
             return {"export_id": export_rec.id, "storage_key": export_rec.storage_key, "total_height_px": export_rec.total_height_px}
 
-        return {}
+        raise ValueError(f"Unsupported job type: {job_type}")
 
 job_runner = JobRunner()
