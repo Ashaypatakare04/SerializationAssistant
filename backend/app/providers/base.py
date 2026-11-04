@@ -51,7 +51,8 @@ class BaseImageProvider(ABC):
         self,
         base_image_bytes: bytes,
         instruction: str,
-        target_region: Optional[str] = None
+        target_region: Optional[str] = None,
+        mask_bytes: Optional[bytes] = None
     ) -> Tuple[bytes, Dict[str, Any]]:
         """Performs localized correction/inpainting."""
         pass

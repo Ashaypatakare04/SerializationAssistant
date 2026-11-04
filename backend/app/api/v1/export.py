@@ -17,6 +17,7 @@ router = APIRouter(tags=["Export"])
 async def trigger_episode_export(
     episode_id: str,
     require_all_approved: bool = Query(True),
+    include_speech_bubbles: bool = Query(True),
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id)
 ):
@@ -38,7 +39,8 @@ async def trigger_episode_export(
         job_type="episode_export",
         payload={
             "episode_id": episode_id,
-            "require_all_approved": require_all_approved
+            "require_all_approved": require_all_approved,
+            "include_speech_bubbles": include_speech_bubbles
         }
     )
     return job

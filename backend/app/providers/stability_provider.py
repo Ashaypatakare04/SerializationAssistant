@@ -47,11 +47,14 @@ class StabilityProvider(BaseImageProvider):
             details = []
             for c in character_refs:
                 name = c.get("canonical_name", "Character")
-                hair = c.get("hair_style_and_color", "")
-                clothes = c.get("clothing_and_accessories", "")
+                hair = c.get("hair") or c.get("hair_style_and_color", "")
+                clothes = c.get("clothing") or c.get("clothing_and_accessories", "")
+                appearance = c.get("appearance") or c.get("physical_appearance", "")
                 features = c.get("distinctive_features", "")
-                details.append(f"{name} ({hair}, {clothes}, {features})")
-            char_desc = " Character appearance: " + "; ".join(details) + "."
+                parts = [p for p in [hair, clothes, appearance, features] if p]
+                spec_str = f"{name} ({', '.join(parts)})" if parts else name
+                details.append(spec_str)
+            char_desc = " Canonical character appearance: " + "; ".join(details) + "."
 
         prompt = (
             f"Masterpiece vertical webtoon manhwa panel. {shot}, {angle}. "
@@ -165,11 +168,16 @@ class StabilityProvider(BaseImageProvider):
         self,
         base_image_bytes: bytes,
         instruction: str,
-        target_region: Optional[str] = None
+        target_region: Optional[str] = None,
+        mask_bytes: Optional[bytes] = None
     ) -> Tuple[bytes, Dict[str, Any]]:
         if not self.is_configured():
             raise RuntimeError("Stability AI provider not configured with API key.")
         
+        files = {"image": ("base.png", base_image_bytes, "image/png")}
+        if mask_bytes:
+            files["mask"] = ("mask.png", mask_bytes, "image/png")
+
         async def _call_inpaint():
             async with httpx.AsyncClient(timeout=60.0) as client:
                 resp = await client.post(
@@ -178,7 +186,7 @@ class StabilityProvider(BaseImageProvider):
                         "Authorization": f"Bearer {self.api_key}",
                         "Accept": "image/*"
                     },
-                    files={"image": ("base.png", base_image_bytes, "image/png")},
+                    files=files,
                     data={
                         "prompt": instruction,
                         "output_format": "png"
@@ -197,6 +205,7 @@ class StabilityProvider(BaseImageProvider):
             "cost_usd": 0.04,
             "duration_seconds": 7.0,
             "instruction": instruction,
-            "target_region": target_region
+            "target_region": target_region,
+            "has_mask": mask_bytes is not None
         }
         return raw_bytes, metadata

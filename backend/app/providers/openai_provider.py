@@ -61,10 +61,13 @@ class OpenAIProvider(BaseLLMProvider, BaseImageProvider):
             details = []
             for c in character_refs:
                 name = c.get("canonical_name", "Character")
-                hair = c.get("hair_style_and_color", "")
-                clothes = c.get("clothing_and_accessories", "")
+                hair = c.get("hair") or c.get("hair_style_and_color", "")
+                clothes = c.get("clothing") or c.get("clothing_and_accessories", "")
+                appearance = c.get("appearance") or c.get("physical_appearance", "")
                 features = c.get("distinctive_features", "")
-                details.append(f"{name} ({hair}, wearing {clothes}, {features})")
+                parts = [p for p in [hair, clothes, appearance, features] if p]
+                spec_str = f"{name} ({', '.join(parts)})" if parts else name
+                details.append(spec_str)
             char_desc = " Featuring characters: " + "; ".join(details) + "."
 
         prompt = (
@@ -244,7 +247,8 @@ class OpenAIProvider(BaseLLMProvider, BaseImageProvider):
         self,
         base_image_bytes: bytes,
         instruction: str,
-        target_region: Optional[str] = None
+        target_region: Optional[str] = None,
+        mask_bytes: Optional[bytes] = None
     ) -> Tuple[bytes, Dict[str, Any]]:
         if not self.is_configured():
             raise RuntimeError("OpenAI provider not configured with API key.")

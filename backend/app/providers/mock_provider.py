@@ -360,6 +360,7 @@ class MockImageProvider(BaseImageProvider):
         self,
         panel_spec: Dict[str, Any],
         style_profile: Dict[str, Any],
+        character_refs: Optional[List[Dict[str, Any]]] = None,
         is_final: bool = False,
         aspect_ratio: str = "4:5",
         edit_annotation: Optional[str] = None
@@ -367,7 +368,7 @@ class MockImageProvider(BaseImageProvider):
         """
         Renders a rich, art-directed webtoon comic panel using Pillow.
         Includes styling, lighting gradients, character silhouettes, shot markers,
-        and clear dev/test mode watermarks.
+        canonical character reference badges, and clear dev/test mode watermarks.
         """
         # Parse dimensions based on aspect ratio
         width = 800
@@ -431,6 +432,29 @@ class MockImageProvider(BaseImageProvider):
             draw.ellipse([focal_x - 90, focal_y - 160, focal_x + 90, focal_y + 20], fill=(18, 22, 28), outline=(90, 120, 160), width=3)
             draw.polygon([(focal_x - 180, height - 30), (focal_x - 80, focal_y), (focal_x + 80, focal_y), (focal_x + 180, height - 30)], fill=(15, 18, 24))
 
+        # Canonical Character Reference conditioning badge
+        if character_refs:
+            badge_y = 85
+            for c_idx, c in enumerate(character_refs[:2]):
+                name = c.get("canonical_name", "Character")
+                hair = c.get("hair") or c.get("hair_style_and_color", "")
+                clothes = c.get("clothing") or c.get("clothing_and_accessories", "")
+                primary_bytes = c.get("primary_reference_bytes")
+
+                draw.rectangle([25, badge_y, 350, badge_y + 44], fill=(15, 23, 42), outline=(56, 189, 248), width=1)
+                draw.text((32, badge_y + 4), f"CANONICAL: {name.upper()}", fill=(56, 189, 248))
+                desc_str = f"{hair[:16]} | {clothes[:16]}" if (hair or clothes) else "Reference Sheet Linked"
+                draw.text((32, badge_y + 23), desc_str, fill=(203, 213, 225))
+
+                if primary_bytes:
+                    try:
+                        with Image.open(io.BytesIO(primary_bytes)) as ref_img:
+                            thumb = ref_img.convert("RGB").resize((40, 40))
+                            img.paste(thumb, (305, badge_y + 2))
+                    except Exception:
+                        pass
+                badge_y += 48
+
         # 5. Visual Direction & Cinematic Framing Banner
         draw.rectangle([20, 20, width - 20, 75], fill=(10, 14, 20))
         header_text = f"PANEL {panel_num:02d} | {shot_type} [{cam_angle}]"
@@ -476,6 +500,7 @@ class MockImageProvider(BaseImageProvider):
         raw_bytes = self._render_procedural_panel(
             panel_spec=panel_spec,
             style_profile=style_profile,
+            character_refs=character_refs,
             is_final=False,
             aspect_ratio=aspect_ratio
         )
@@ -502,6 +527,7 @@ class MockImageProvider(BaseImageProvider):
         raw_bytes = self._render_procedural_panel(
             panel_spec=panel_spec,
             style_profile=style_profile,
+            character_refs=character_refs,
             is_final=True,
             aspect_ratio=aspect_ratio
         )
@@ -521,16 +547,36 @@ class MockImageProvider(BaseImageProvider):
         self,
         base_image_bytes: bytes,
         instruction: str,
-        target_region: Optional[str] = None
+        target_region: Optional[str] = None,
+        mask_bytes: Optional[bytes] = None
     ) -> Tuple[bytes, Dict[str, Any]]:
         # Load base image and apply targeted edit overlay
         with Image.open(io.BytesIO(base_image_bytes)) as base_img:
             img = base_img.copy()
             draw = ImageDraw.Draw(img)
-            # Add targeted correction stamp
             w, h = img.size
-            draw.rectangle([50, h // 2 - 50, w - 50, h // 2 + 50], fill=(20, 20, 30, 220), outline=(255, 140, 0), width=3)
-            draw.text((70, h // 2 - 25), f"EDITED REGION [{target_region or 'all'}]:\n{instruction}", fill=(255, 230, 150))
+
+            if mask_bytes:
+                # Localized inpainting via binary mask
+                try:
+                    with Image.open(io.BytesIO(mask_bytes)) as mask_img:
+                        mask_gray = mask_img.convert("L")
+                        bbox = mask_gray.getbbox()  # (left, upper, right, lower)
+                        if bbox:
+                            bx0, by0, bx1, by1 = bbox
+                            # Draw localized correction highlight over mask
+                            draw.rectangle([bx0, by0, bx1, by1], fill=(40, 20, 60, 200), outline=(236, 72, 153), width=2)
+                            draw.text((bx0 + 8, max(by0 + 8, 10)), f"MASKED INPAINT:\n{instruction[:35]}", fill=(255, 255, 255))
+                        else:
+                            draw.rectangle([50, h // 2 - 50, w - 50, h // 2 + 50], fill=(20, 20, 30, 220), outline=(236, 72, 153), width=3)
+                            draw.text((70, h // 2 - 25), f"INPAINT APPLIED:\n{instruction}", fill=(255, 230, 150))
+                except Exception:
+                    draw.rectangle([50, h // 2 - 50, w - 50, h // 2 + 50], fill=(20, 20, 30, 220), outline=(255, 140, 0), width=3)
+                    draw.text((70, h // 2 - 25), f"EDITED REGION [{target_region or 'all'}]:\n{instruction}", fill=(255, 230, 150))
+            else:
+                # Add targeted correction stamp
+                draw.rectangle([50, h // 2 - 50, w - 50, h // 2 + 50], fill=(20, 20, 30, 220), outline=(255, 140, 0), width=3)
+                draw.text((70, h // 2 - 25), f"EDITED REGION [{target_region or 'all'}]:\n{instruction}", fill=(255, 230, 150))
             
             buf = io.BytesIO()
             img.save(buf, format="PNG")
@@ -544,7 +590,8 @@ class MockImageProvider(BaseImageProvider):
             "cost_usd": 0.0,
             "duration_seconds": 0.35,
             "instruction": instruction,
-            "target_region": target_region
+            "target_region": target_region,
+            "has_mask": mask_bytes is not None
         }
         return edited_bytes, metadata
 

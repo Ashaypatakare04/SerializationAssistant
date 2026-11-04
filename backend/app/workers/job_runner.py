@@ -222,6 +222,7 @@ class JobRunner:
                     cr_res = await session.execute(cr_stmt)
                     crefs = cr_res.scalars().all()
                     ref_assets = []
+                    primary_ref_bytes = None
                     for cr in crefs:
                         char_ref_ids.append(cr.id)
                         if cr.reference_asset:
@@ -231,6 +232,11 @@ class JobRunner:
                                 "label": cr.reference_asset.label,
                                 "is_primary": cr.is_primary_sheet
                             })
+                            if cr.is_primary_sheet and not primary_ref_bytes:
+                                try:
+                                    primary_ref_bytes = storage_service.read_bytes(cr.reference_asset.storage_key)
+                                except Exception:
+                                    pass
                     active_ver = None
                     if c.versions:
                         if c.active_version_id:
@@ -245,7 +251,8 @@ class JobRunner:
                         "hair": active_ver.hair_style_and_color if active_ver else "",
                         "clothing": active_ver.clothing_and_accessories if active_ver else "",
                         "distinctive_features": active_ver.distinctive_features if active_ver else "",
-                        "reference_assets": ref_assets
+                        "reference_assets": ref_assets,
+                        "primary_reference_bytes": primary_ref_bytes
                     })
 
 
@@ -345,6 +352,19 @@ class JobRunner:
             asset_id = p["asset_id"]
             instruction = p["instruction"]
             target_region = p.get("target_region")
+            mask_storage_key = p.get("mask_storage_key")
+            mask_bytes = None
+            if mask_storage_key:
+                try:
+                    mask_bytes = storage_service.read_bytes(mask_storage_key)
+                except Exception:
+                    pass
+            elif p.get("mask_base64"):
+                import base64
+                try:
+                    mask_bytes = base64.b64decode(p["mask_base64"])
+                except Exception:
+                    pass
 
             # Load active asset version
             ver_stmt = select(AssetVersion).where(AssetVersion.asset_id == asset_id).order_by(AssetVersion.version_number.desc())
@@ -354,8 +374,10 @@ class JobRunner:
                 raise ValueError(f"Asset {asset_id} has no versions to edit.")
 
             orig_bytes = storage_service.read_bytes(current_ver.storage_key)
-            img_provider = provider_factory.get_image_provider()
-            edited_bytes, meta = await img_provider.edit_image(orig_bytes, instruction, target_region)
+            img_provider = provider_factory.get_image_provider(p.get("provider_override"))
+            edited_bytes, meta = await img_provider.edit_image(
+                orig_bytes, instruction, target_region=target_region, mask_bytes=mask_bytes
+            )
 
             # Save edited version
             storage_key, chk, fsize = storage_service.save_bytes("assets", f"edit_{asset_id[:6]}.png", edited_bytes)
@@ -389,8 +411,12 @@ class JobRunner:
         elif job_type == "episode_export":
             episode_id = p["episode_id"]
             require_all_approved = p.get("require_all_approved", False)
+            include_speech_bubbles = p.get("include_speech_bubbles", True)
             export_rec = await webtoon_exporter.export_episode(
-                session, episode_id=episode_id, require_all_approved=require_all_approved
+                session,
+                episode_id=episode_id,
+                require_all_approved=require_all_approved,
+                include_speech_bubbles=include_speech_bubbles
             )
             return {"export_id": export_rec.id, "storage_key": export_rec.storage_key, "total_height_px": export_rec.total_height_px}
 

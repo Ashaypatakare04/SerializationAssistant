@@ -120,8 +120,14 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ stage }),
     }),
-  triggerAssetEdit: (assetId: string, data: { instruction: string; target_region?: string }) =>
+  triggerAssetEdit: (assetId: string, data: { instruction: string; target_region?: string; mask_base64?: string }) =>
     request<Job>(`/assets/${assetId}/edit-jobs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+  triggerPanelInpaint: (panelId: string, data: { instruction: string; target_region?: string; mask_base64?: string }) =>
+    request<Job>(`/panels/${panelId}/inpaint`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
@@ -218,8 +224,8 @@ export const api = {
     request<FullQAReport>(`/episodes/${episodeId}/qa-report`),
 
   // Export
-  triggerExport: (episodeId: string, requireApproved = true) =>
-    request<Job>(`/episodes/${episodeId}/export-jobs?require_all_approved=${requireApproved}`, {
+  triggerExport: (episodeId: string, requireApproved = true, includeSpeechBubbles = true) =>
+    request<Job>(`/episodes/${episodeId}/export-jobs?require_all_approved=${requireApproved}&include_speech_bubbles=${includeSpeechBubbles}`, {
       method: "POST",
     }),
   getExport: (exportId: string) =>

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Episode, Panel, Asset, AssetVersion } from "../types";
 import { api, getStorageUrl } from "../lib/api";
 import {
@@ -14,7 +14,12 @@ import {
   Clock,
   Layers,
   ArrowRight,
-  ShieldAlert
+  ShieldAlert,
+  Paintbrush,
+  Eraser,
+  RotateCcw,
+  Eye,
+  Brush
 } from "lucide-react";
 
 interface IllustrationReviewProps {
@@ -33,7 +38,17 @@ export const IllustrationReview: React.FC<IllustrationReviewProps> = ({
   const [editInstruction, setEditInstruction] = useState("");
   const [targetRegion, setTargetRegion] = useState("face");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [processingStatus, setProcessingStatus] = useState<string>("");
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  // Inpainting Canvas Brush State
+  const [isBrushMode, setIsBrushMode] = useState(false);
+  const [brushSize, setBrushSize] = useState(30);
+  const [isEraser, setIsEraser] = useState(false);
+  const [hasMaskDrawn, setHasMaskDrawn] = useState(false);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const imgRef = useRef<HTMLImageElement | null>(null);
+  const isDrawingRef = useRef(false);
 
   const allPanels = React.useMemo(() => {
     const panels: Panel[] = [];
@@ -45,7 +60,6 @@ export const IllustrationReview: React.FC<IllustrationReviewProps> = ({
     panels.sort((a, b) => a.panel_number - b.panel_number);
     return panels;
   }, [episode]);
-
 
   useEffect(() => {
     if (allPanels.length > 0 && !selectedPanel) {
@@ -60,8 +74,151 @@ export const IllustrationReview: React.FC<IllustrationReviewProps> = ({
       }).catch(() => {
         setPanelAssets([]);
       });
+      // Reset mask when switching panel
+      clearCanvas();
+      setIsBrushMode(false);
     }
   }, [selectedPanel]);
+
+  // Adjust canvas size when image loads or window resizes
+  const syncCanvasDimensions = () => {
+    const canvas = canvasRef.current;
+    const img = imgRef.current;
+    if (canvas && img) {
+      canvas.width = img.clientWidth || 800;
+      canvas.height = img.clientHeight || 1000;
+    }
+  };
+
+  useEffect(() => {
+    if (isBrushMode) {
+      syncCanvasDimensions();
+    }
+  }, [isBrushMode]);
+
+  const clearCanvas = () => {
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
+    }
+    setHasMaskDrawn(false);
+  };
+
+  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    isDrawingRef.current = true;
+    const rect = canvas.getBoundingClientRect();
+    const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
+    const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    drawStroke(x, y);
+  };
+
+  const draw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    if (!isDrawingRef.current) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
+    const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    drawStroke(x, y);
+  };
+
+  const stopDrawing = () => {
+    isDrawingRef.current = false;
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const ctx = canvas.getContext("2d");
+      ctx?.closePath();
+    }
+  };
+
+  const drawStroke = (x: number, y: number) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    ctx.lineWidth = brushSize;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+
+    if (isEraser) {
+      ctx.globalCompositeOperation = "destination-out";
+    } else {
+      ctx.globalCompositeOperation = "source-over";
+      ctx.strokeStyle = "rgba(236, 72, 153, 0.65)";
+      ctx.fillStyle = "rgba(236, 72, 153, 0.65)";
+    }
+
+    ctx.lineTo(x, y);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(x, y, brushSize / 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+
+    setHasMaskDrawn(true);
+  };
+
+  const exportBinaryMask = (): string | null => {
+    const canvas = canvasRef.current;
+    if (!canvas || !hasMaskDrawn) return null;
+
+    // Create offscreen mask canvas of same size
+    const offscreen = document.createElement("canvas");
+    offscreen.width = canvas.width;
+    offscreen.height = canvas.height;
+    const offCtx = offscreen.getContext("2d");
+    if (!offCtx) return null;
+
+    // 1. Fill entire canvas with black (unmasked)
+    offCtx.fillStyle = "#000000";
+    offCtx.fillRect(0, 0, offscreen.width, offscreen.height);
+
+    // 2. Read drawn canvas pixels; convert painted regions to white
+    const srcCtx = canvas.getContext("2d");
+    if (!srcCtx) return null;
+    const imgData = srcCtx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imgData.data;
+
+    const maskImgData = offCtx.getImageData(0, 0, offscreen.width, offscreen.height);
+    const maskData = maskImgData.data;
+
+    for (let i = 0; i < data.length; i += 4) {
+      const alpha = data[i + 3];
+      if (alpha > 20) {
+        // Masked area -> pure white
+        maskData[i] = 255;
+        maskData[i + 1] = 255;
+        maskData[i + 2] = 255;
+        maskData[i + 3] = 255;
+      } else {
+        // Unmasked area -> pure black
+        maskData[i] = 0;
+        maskData[i + 1] = 0;
+        maskData[i + 2] = 0;
+        maskData[i + 3] = 255;
+      }
+    }
+
+    offCtx.putImageData(maskImgData, 0, 0);
+    return offscreen.toDataURL("image/png");
+  };
 
   if (!episode || allPanels.length === 0) {
     return (
@@ -89,10 +246,13 @@ export const IllustrationReview: React.FC<IllustrationReviewProps> = ({
     }
 
     setIsProcessing(true);
+    setProcessingStatus("Initiating high-resolution generation...");
     setMessage(null);
     try {
       const job = await api.triggerPanelGeneration(selectedPanel.id, "final");
-      await api.pollJob(job.id);
+      await api.streamJob(job.id, (j) => {
+        setProcessingStatus(`${j.stage_description} (${j.progress_percentage}%)`);
+      });
       setMessage({ type: "success", text: `Final artwork generated for Panel ${selectedPanel.panel_number}!` });
       await onRefresh();
       const assets = await api.getPanelAssets(selectedPanel.id);
@@ -101,28 +261,50 @@ export const IllustrationReview: React.FC<IllustrationReviewProps> = ({
       setMessage({ type: "error", text: err.message || "Final generation failed." });
     } finally {
       setIsProcessing(false);
+      setProcessingStatus("");
     }
   };
 
-  const handleApplyEdit = async () => {
-    if (!activeAsset || !editInstruction.trim()) return;
+  const handleApplyEditOrInpaint = async () => {
+    if (!activeAsset || !editInstruction.trim() || !selectedPanel) return;
     setIsProcessing(true);
     setMessage(null);
+    setProcessingStatus("Preparing targeted inpaint request...");
+
     try {
-      const job = await api.triggerAssetEdit(activeAsset.id, {
+      let maskDataUrl: string | undefined = undefined;
+      if (isBrushMode && hasMaskDrawn) {
+        const mask = exportBinaryMask();
+        if (mask) maskDataUrl = mask;
+      }
+
+      const job = await api.triggerPanelInpaint(selectedPanel.id, {
         instruction: editInstruction,
-        target_region: targetRegion
+        target_region: targetRegion,
+        mask_base64: maskDataUrl
       });
-      await api.pollJob(job.id);
+
+      await api.streamJob(job.id, (j) => {
+        setProcessingStatus(`${j.stage_description} (${j.progress_percentage}%)`);
+      });
+
       setEditInstruction("");
-      setMessage({ type: "success", text: `Targeted correction applied to [${targetRegion}]!` });
+      clearCanvas();
+      setIsBrushMode(false);
+      setMessage({
+        type: "success",
+        text: maskDataUrl
+          ? `Localized inpaint applied using custom painted brush mask!`
+          : `Targeted correction applied to [${targetRegion}]!`
+      });
       await onRefresh();
-      const assets = await api.getPanelAssets(selectedPanel!.id);
+      const assets = await api.getPanelAssets(selectedPanel.id);
       setPanelAssets(assets);
     } catch (err: any) {
-      setMessage({ type: "error", text: err.message || "Edit failed." });
+      setMessage({ type: "error", text: err.message || "Edit / inpaint failed." });
     } finally {
       setIsProcessing(false);
+      setProcessingStatus("");
     }
   };
 
@@ -158,7 +340,7 @@ export const IllustrationReview: React.FC<IllustrationReviewProps> = ({
             <span>Illustration Review & Correction Studio</span>
           </h2>
           <p className="text-xs text-studio-400 mt-0.5">
-            Inspect draft and final illustrations against visual references, request targeted corrections, and approve finished artwork.
+            Inspect illustrations against canonical references, paint localized inpainting masks, and approve finished webtoon panels.
           </p>
         </div>
 
@@ -228,7 +410,7 @@ export const IllustrationReview: React.FC<IllustrationReviewProps> = ({
           </div>
         </div>
 
-        {/* Center: Selected Panel High-Res Artwork Viewer */}
+        {/* Center: Selected Panel High-Res Artwork Viewer with Interactive Mask Canvas */}
         <div className="lg:col-span-2 space-y-4">
           {selectedPanel && (
             <div className="bg-studio-850 border border-studio-750 rounded-xl p-5 shadow">
@@ -249,7 +431,7 @@ export const IllustrationReview: React.FC<IllustrationReviewProps> = ({
                     className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-studio-accent hover:bg-studio-accentHover text-xs font-semibold text-white transition disabled:opacity-50"
                   >
                     <Sparkles className="w-3.5 h-3.5" />
-                    <span>{isProcessing ? "Rendering..." : "Generate Final Art"}</span>
+                    <span>{isProcessing ? processingStatus || "Rendering..." : "Generate Final Art"}</span>
                   </button>
 
                   {activeVersion && (
@@ -269,15 +451,100 @@ export const IllustrationReview: React.FC<IllustrationReviewProps> = ({
                 </div>
               </div>
 
-              {/* Artwork Viewport */}
+              {/* Inpaint Mask Toolbar */}
+              {activeVersion && (
+                <div className="flex items-center justify-between bg-studio-900 border border-studio-800 rounded-lg p-2.5 mb-3 text-xs">
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => setIsBrushMode(!isBrushMode)}
+                      className={`flex items-center space-x-1 px-2.5 py-1 rounded text-xs font-semibold transition ${
+                        isBrushMode
+                          ? "bg-pink-600 text-white"
+                          : "bg-studio-800 hover:bg-studio-750 text-studio-300"
+                      }`}
+                    >
+                      <Brush className="w-3.5 h-3.5" />
+                      <span>{isBrushMode ? "Active Mask Brush" : "Paint Inpaint Mask"}</span>
+                    </button>
+
+                    {isBrushMode && (
+                      <>
+                        <button
+                          onClick={() => setIsEraser(false)}
+                          className={`p-1.5 rounded transition ${
+                            !isEraser ? "bg-pink-600/40 text-pink-300 border border-pink-500" : "text-studio-400 hover:text-white"
+                          }`}
+                          title="Brush Mode"
+                        >
+                          <Paintbrush className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => setIsEraser(true)}
+                          className={`p-1.5 rounded transition ${
+                            isEraser ? "bg-pink-600/40 text-pink-300 border border-pink-500" : "text-studio-400 hover:text-white"
+                          }`}
+                          title="Eraser Mode"
+                        >
+                          <Eraser className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={clearCanvas}
+                          className="flex items-center space-x-1 px-2 py-1 bg-studio-800 hover:bg-studio-750 text-studio-400 hover:text-white rounded"
+                          title="Clear Mask"
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                          <span className="text-[11px]">Clear</span>
+                        </button>
+                      </>
+                    )}
+                  </div>
+
+                  {isBrushMode && (
+                    <div className="flex items-center space-x-2">
+                      <span className="text-[11px] text-studio-400">Size:</span>
+                      <input
+                        type="range"
+                        min="8"
+                        max="80"
+                        value={brushSize}
+                        onChange={(e) => setBrushSize(Number(e.target.value))}
+                        className="w-20 accent-pink-500"
+                      />
+                      <span className="text-[10px] font-mono text-studio-300">{brushSize}px</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Artwork Viewport with Interactive Canvas */}
               <div className="relative aspect-[4/5] bg-studio-950 rounded-xl overflow-hidden border border-studio-800 flex items-center justify-center">
                 {activeVersion ? (
-                  /* eslint-disable-next-line @next/next/no-img-element */
-                  <img
-                    src={getStorageUrl(activeVersion.storage_key)}
-                    alt={`Panel ${selectedPanel.panel_number}`}
-                    className="w-full h-full object-contain"
-                  />
+                  <>
+                    {/* Base Panel Artwork */}
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      ref={imgRef}
+                      src={getStorageUrl(activeVersion.storage_key)}
+                      alt={`Panel ${selectedPanel.panel_number}`}
+                      onLoad={syncCanvasDimensions}
+                      className="w-full h-full object-contain pointer-events-none select-none"
+                    />
+
+                    {/* Interactive Mask Brush Overlay Canvas */}
+                    <canvas
+                      ref={canvasRef}
+                      onMouseDown={startDrawing}
+                      onMouseMove={draw}
+                      onMouseUp={stopDrawing}
+                      onMouseLeave={stopDrawing}
+                      onTouchStart={startDrawing}
+                      onTouchMove={draw}
+                      onTouchEnd={stopDrawing}
+                      className={`absolute inset-0 w-full h-full ${
+                        isBrushMode ? "cursor-crosshair z-10 pointer-events-auto" : "pointer-events-none hidden"
+                      }`}
+                    />
+                  </>
                 ) : (
                   <div className="text-center p-6 text-studio-500">
                     <Sparkles className="w-10 h-10 mx-auto mb-2 opacity-40" />
@@ -301,41 +568,62 @@ export const IllustrationReview: React.FC<IllustrationReviewProps> = ({
               <span>Targeted Correction</span>
             </h4>
             <p className="text-[11px] text-studio-400">
-              Apply localized corrections without discarding the entire panel composition.
+              {isBrushMode && hasMaskDrawn
+                ? "Custom painted mask detected! Inpainting will execute strictly inside your drawn brush area."
+                : "Apply localized corrections with prompt instructions or paint an inpainting mask."}
             </p>
 
-            <div>
-              <label className="block text-[10px] font-semibold text-studio-400 mb-1">Target Region</label>
-              <select
-                value={targetRegion}
-                onChange={(e) => setTargetRegion(e.target.value)}
-                className="w-full px-2 py-1.5 bg-studio-900 border border-studio-700 rounded text-xs text-white"
-              >
-                <option value="face">Facial Expression & Eyes</option>
-                <option value="hair">Hair Rendering</option>
-                <option value="clothing">Clothing & Folds</option>
-                <option value="lighting">Rim Lighting / Shadows</option>
-                <option value="background">Background Perspective</option>
-              </select>
-            </div>
+            {!isBrushMode && (
+              <div>
+                <label className="block text-[10px] font-semibold text-studio-400 mb-1">Target Region</label>
+                <select
+                  value={targetRegion}
+                  onChange={(e) => setTargetRegion(e.target.value)}
+                  className="w-full px-2 py-1.5 bg-studio-900 border border-studio-700 rounded text-xs text-white"
+                >
+                  <option value="face">Facial Expression & Eyes</option>
+                  <option value="hair">Hair Rendering</option>
+                  <option value="clothing">Clothing & Folds</option>
+                  <option value="lighting">Rim Lighting / Shadows</option>
+                  <option value="background">Background Perspective</option>
+                </select>
+              </div>
+            )}
 
             <div>
-              <label className="block text-[10px] font-semibold text-studio-400 mb-1">Correction Prompt</label>
+              <label className="block text-[10px] font-semibold text-studio-400 mb-1">
+                {isBrushMode ? "Inpaint Instruction" : "Correction Prompt"}
+              </label>
               <textarea
                 rows={3}
                 value={editInstruction}
                 onChange={(e) => setEditInstruction(e.target.value)}
-                placeholder="e.g. Sharpen eye highlights and deepen shadow..."
+                placeholder={
+                  isBrushMode
+                    ? "e.g. Draw a gentle smile, refine the hand fingers..."
+                    : "e.g. Sharpen eye highlights and deepen shadow..."
+                }
                 className="w-full px-2 py-1.5 bg-studio-900 border border-studio-700 rounded text-xs text-white"
               />
             </div>
 
             <button
-              onClick={handleApplyEdit}
+              onClick={handleApplyEditOrInpaint}
               disabled={isProcessing || !activeAsset || !editInstruction.trim()}
-              className="w-full py-1.5 bg-studio-750 hover:bg-studio-700 text-xs font-semibold text-white rounded transition disabled:opacity-50"
+              className={`w-full py-2 text-xs font-semibold rounded transition disabled:opacity-50 flex items-center justify-center space-x-1.5 ${
+                isBrushMode && hasMaskDrawn
+                  ? "bg-pink-600 hover:bg-pink-500 text-white shadow-md shadow-pink-950"
+                  : "bg-studio-750 hover:bg-studio-700 text-white"
+              }`}
             >
-              {isProcessing ? "Correcting..." : "Apply Edit"}
+              <Wand2 className="w-3.5 h-3.5" />
+              <span>
+                {isProcessing
+                  ? processingStatus || "Inpainting..."
+                  : isBrushMode && hasMaskDrawn
+                  ? "Execute Masked Inpaint"
+                  : "Apply Targeted Edit"}
+              </span>
             </button>
           </div>
 

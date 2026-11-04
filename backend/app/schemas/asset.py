@@ -48,6 +48,8 @@ class EditJobCreate(BaseModel):
     instruction: str
     target_region: Optional[str] = None  # e.g., "face", "clothing", "background"
     mask_storage_key: Optional[str] = None
+    mask_base64: Optional[str] = None
+    provider_override: Optional[str] = None
 
 class JobResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)

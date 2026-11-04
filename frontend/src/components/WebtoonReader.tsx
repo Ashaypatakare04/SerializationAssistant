@@ -30,6 +30,7 @@ export const WebtoonReader: React.FC<WebtoonReaderProps> = ({
   const [exportDownloadUrl, setExportDownloadUrl] = useState<string | null>(null);
   const [panelAssetMap, setPanelAssetMap] = useState<Record<string, string>>({});
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [includeLetteringInExport, setIncludeLetteringInExport] = useState(true);
 
   const allPanels = React.useMemo(() => {
     const panels: Panel[] = [];
@@ -83,7 +84,7 @@ export const WebtoonReader: React.FC<WebtoonReaderProps> = ({
     setMessage(null);
     setExportDownloadUrl(null);
     try {
-      const job = await api.triggerExport(episode.id, true);
+      const job = await api.triggerExport(episode.id, true, includeLetteringInExport);
       const finishedJob = await api.pollJob(job.id);
       if (finishedJob.status === "failed") {
         throw new Error(finishedJob.error_message || "Export failed: All panels must be approved before publishing.");
@@ -94,7 +95,7 @@ export const WebtoonReader: React.FC<WebtoonReaderProps> = ({
         setExportDownloadUrl(downloadUrl);
         setMessage({
           type: "success",
-          text: `Episode compiled into mobile slices and packaged with manifest.json!`
+          text: `Episode compiled into mobile slices and packaged with manifest.json (lettering ${includeLetteringInExport ? "baked in" : "clean artwork"})!`
         });
       }
       await onRefresh();
@@ -141,6 +142,17 @@ export const WebtoonReader: React.FC<WebtoonReaderProps> = ({
             <MessageSquare className="w-3.5 h-3.5" />
             <span>Lettering Layer</span>
           </button>
+
+          {/* Bake Lettering Toggle */}
+          <label className="flex items-center space-x-1.5 text-xs text-studio-300 bg-studio-850 border border-studio-700 px-2.5 py-1.5 rounded-lg cursor-pointer">
+            <input
+              type="checkbox"
+              checked={includeLetteringInExport}
+              onChange={(e) => setIncludeLetteringInExport(e.target.checked)}
+              className="accent-studio-accent rounded"
+            />
+            <span className="text-[11px] font-medium">Bake Balloons</span>
+          </label>
 
           {/* Export Action */}
           <button

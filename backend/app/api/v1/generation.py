@@ -1,3 +1,5 @@
+import base64
+import time
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -8,6 +10,7 @@ from backend.app.models.adaptation import Panel, Beat, Scene, Episode, Adaptatio
 from backend.app.models.asset import Asset, AssetVersion
 from backend.app.schemas.asset import GenerationJobCreate, EditJobCreate, JobResponse, AssetResponse
 from backend.app.services.approval import approval_service
+from backend.app.services.storage import storage_service
 from backend.app.workers.job_runner import job_runner
 
 from backend.app.core.security import get_current_user_id, verify_project_access
@@ -77,6 +80,19 @@ async def trigger_asset_edit(
 
     await verify_project_access(asset.project_id, user_id, db)
 
+    mask_storage_key = data.mask_storage_key
+    if data.mask_base64 and not mask_storage_key:
+        try:
+            b64_str = data.mask_base64
+            if "," in b64_str:
+                b64_str = b64_str.split(",", 1)[1]
+            mask_raw = base64.b64decode(b64_str)
+            mask_storage_key, _, _ = storage_service.save_bytes(
+                "assets", f"inpaint_mask_{asset_id[:6]}_{int(time.time())}.png", mask_raw
+            )
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid base64 inpaint mask: {e}")
+
     job = await job_runner.create_job(
         project_id=asset.project_id,
         job_type="panel_edit",
@@ -84,7 +100,79 @@ async def trigger_asset_edit(
             "asset_id": asset_id,
             "instruction": data.instruction,
             "target_region": data.target_region,
-            "mask_storage_key": data.mask_storage_key
+            "mask_storage_key": mask_storage_key,
+            "provider_override": data.provider_override
+        }
+    )
+    return job
+
+
+@router.post("/panels/{panel_id}/inpaint", response_model=JobResponse, status_code=status.HTTP_202_ACCEPTED)
+async def inpaint_panel(
+    panel_id: str,
+    data: EditJobCreate,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id)
+):
+    stmt = (
+        select(Panel)
+        .options(
+            selectinload(Panel.beat)
+            .selectinload(Beat.scene)
+            .selectinload(Scene.episode)
+            .selectinload(Episode.adaptation_plan)
+        )
+        .where(Panel.id == panel_id)
+    )
+    res = await db.execute(stmt)
+    panel = res.scalar_one_or_none()
+    if not panel:
+        raise HTTPException(status_code=404, detail="Panel not found.")
+
+    project_id = panel.beat.scene.episode.adaptation_plan.project_id
+    await verify_project_access(project_id, user_id, db)
+
+    # Resolve active asset
+    asset_id = panel.active_asset_id
+    if not asset_id:
+        asset_stmt = (
+            select(Asset)
+            .where(Asset.panel_id == panel_id)
+            .order_by(Asset.created_at.desc())
+        )
+        a_res = await db.execute(asset_stmt)
+        asset = a_res.scalars().first()
+        if not asset:
+            raise HTTPException(status_code=400, detail="Cannot inpaint: Panel has no generated artwork yet.")
+        asset_id = asset.id
+
+    # If mask_base64 provided, persist it to storage
+    mask_storage_key = data.mask_storage_key
+    if data.mask_base64 and not mask_storage_key:
+        try:
+            b64_str = data.mask_base64
+            if "," in b64_str:
+                b64_str = b64_str.split(",", 1)[1]
+            mask_raw = base64.b64decode(b64_str)
+            mask_storage_key, _, _ = storage_service.save_bytes(
+                "assets", f"inpaint_mask_{panel_id[:6]}_{int(time.time())}.png", mask_raw
+            )
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid base64 inpaint mask: {e}")
+
+    # Panel edit invalidates prior approval
+    panel.is_approved = False
+    await db.commit()
+
+    job = await job_runner.create_job(
+        project_id=project_id,
+        job_type="panel_edit",
+        payload={
+            "asset_id": asset_id,
+            "instruction": data.instruction,
+            "target_region": data.target_region,
+            "mask_storage_key": mask_storage_key,
+            "provider_override": data.provider_override
         }
     )
     return job
