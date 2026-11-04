@@ -34,6 +34,16 @@ class Settings(BaseSettings):
     
     # Persistence & Storage
     DATABASE_URL: str = "sqlite+aiosqlite:///./storage/studio.db"
+
+    @field_validator("DATABASE_URL", mode="after")
+    @classmethod
+    def assemble_db_connection(cls, v: str) -> str:
+        if isinstance(v, str):
+            if v.startswith("postgres://"):
+                return v.replace("postgres://", "postgresql+asyncpg://", 1)
+            elif v.startswith("postgresql://") and not v.startswith("postgresql+asyncpg://"):
+                return v.replace("postgresql://", "postgresql+asyncpg://", 1)
+        return v
     STORAGE_LOCAL_DIR: str = "./storage"
     STORAGE_BACKEND: str = "local"  # "local", "s3"
     S3_BUCKET_NAME: str = ""

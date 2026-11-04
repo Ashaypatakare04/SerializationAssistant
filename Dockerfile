@@ -27,5 +27,5 @@ EXPOSE 8000
 ENV PYTHONPATH=/app
 ENV APP_ENV=production
 
-# Start FastAPI server
-CMD ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Start FastAPI server with automatic schema migrations & dynamic port binding
+CMD ["sh", "-c", "alembic upgrade head && uvicorn backend.app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

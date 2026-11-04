@@ -1,0 +1,52 @@
+services:
+  # 1. FastAPI Web Backend
+  - type: web
+    name: webtoon-backend
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: webtoon-postgres
+          property: connectionString
+      - key: ALLOWED_ORIGINS
+        value: https://webtoon-studio-ai.vercel.app,http://localhost:3000
+      - key: STORAGE_BACKEND
+        value: local
+
+  # 2. Decoupled Standalone Worker Daemon
+  - type: worker
+    name: webtoon-worker
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerCommand: python -m backend.app.workers.standalone_worker --concurrency 4
+    plan: starter
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: STANDALONE_WORKER
+        value: "true"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: webtoon-postgres
+          property: connectionString
+      - key: SECRET_KEY
+        fromService:
+          type: web
+          name: webtoon-backend
+          envVarKey: SECRET_KEY
+      - key: STORAGE_BACKEND
+        value: local
+
+# 3. Managed PostgreSQL Database
+databases:
+  - name: webtoon-postgres
+    databaseName: webtoon_studio
+    user: studio_user
+    plan: starter
