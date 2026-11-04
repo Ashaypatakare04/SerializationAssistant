@@ -58,6 +58,9 @@ class Settings(BaseSettings):
     WORKER_POLL_INTERVAL_SECONDS: float = 1.0
     STANDALONE_WORKER: bool = False
 
+    # Security & Quota Limits
+    MAX_DAILY_GENERATIONS_PER_PROJECT: int = 100
+
     model_config = SettingsConfigDict(env_file=".env", extra="allow")
 
 

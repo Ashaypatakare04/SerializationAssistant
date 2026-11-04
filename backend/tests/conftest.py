@@ -3,7 +3,7 @@ import asyncio
 from pathlib import Path
 import pytest
 import pytest_asyncio
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional, Dict, Any
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 
@@ -55,10 +55,10 @@ async def client() -> AsyncGenerator[AsyncClient, None]:
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
 
-async def wait_for_job(client: AsyncClient, job_id: str, timeout: float = 6.0) -> dict:
+async def wait_for_job(client: AsyncClient, job_id: str, timeout: float = 6.0, headers: Optional[dict] = None) -> dict:
     start_time = asyncio.get_event_loop().time()
     while asyncio.get_event_loop().time() - start_time < timeout:
-        res = await client.get(f"/api/v1/jobs/{job_id}")
+        res = await client.get(f"/api/v1/jobs/{job_id}", headers=headers)
         assert res.status_code == 200
         data = res.json()
         if data["status"] in ("completed", "failed", "cancelled"):

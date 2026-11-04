@@ -3,7 +3,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.db.session import get_db
-from backend.app.core.security import get_current_user_id
+from backend.app.core.security import (
+    get_current_user_id,
+    verify_project_access,
+    require_art_director_or_owner,
+    UserContext
+)
 from backend.app.models.asset import Approval
 from backend.app.schemas.asset import ApprovalCreate, ApprovalResponse
 from backend.app.services.approval import approval_service
@@ -15,8 +20,9 @@ async def record_approval(
     artifact_id: str,
     data: ApprovalCreate,
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id)
+    user_ctx: UserContext = Depends(require_art_director_or_owner)
 ):
+    user_id = user_ctx.user_id
     try:
         approval = await approval_service.record_approval(
             db=db,

@@ -95,3 +95,59 @@ async def update_project(
     await db.refresh(project)
     return project
 
+from pydantic import BaseModel, Field
+
+class ProjectMemberAdd(BaseModel):
+    user_id: str
+    role: str = "editor"  # writer, storyboarder, art_director, admin, editor
+
+class ProjectMemberResponse(BaseModel):
+    id: str
+    project_id: str
+    user_id: str
+    role: str
+
+@router.post("/{project_id}/members", response_model=ProjectMemberResponse, status_code=status.HTTP_201_CREATED)
+async def add_project_member(
+    project_id: str,
+    data: ProjectMemberAdd,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id)
+):
+    await verify_project_access(project_id, user_id, db, require_owner=True)
+    # Ensure user exists
+    u_stmt = select(User).where(User.id == data.user_id)
+    u_res = await db.execute(u_stmt)
+    user = u_res.scalar_one_or_none()
+    if not user:
+        user = User(id=data.user_id, email=f"{data.user_id}@studio.local", name=data.user_id)
+        db.add(user)
+        await db.flush()
+
+    # Check if already a member
+    m_stmt = select(ProjectMember).where(ProjectMember.project_id == project_id, ProjectMember.user_id == data.user_id)
+    m_res = await db.execute(m_stmt)
+    existing = m_res.scalar_one_or_none()
+    if existing:
+        existing.role = data.role
+        await db.commit()
+        await db.refresh(existing)
+        return existing
+
+    new_member = ProjectMember(project_id=project_id, user_id=data.user_id, role=data.role)
+    db.add(new_member)
+    await db.commit()
+    await db.refresh(new_member)
+    return new_member
+
+@router.get("/{project_id}/members", response_model=List[ProjectMemberResponse])
+async def list_project_members(
+    project_id: str,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id)
+):
+    await verify_project_access(project_id, user_id, db, require_owner=False)
+    stmt = select(ProjectMember).where(ProjectMember.project_id == project_id)
+    res = await db.execute(stmt)
+    return res.scalars().all()
+

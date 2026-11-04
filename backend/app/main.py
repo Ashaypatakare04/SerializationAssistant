@@ -21,6 +21,7 @@ from backend.app.api.v1.qa import router as qa_router
 from backend.app.api.v1.export import router as export_router
 from backend.app.api.v1.assets import router as assets_router
 from backend.app.api.v1.capabilities import router as capabilities_router
+from backend.app.api.v1.auth import router as auth_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -65,6 +66,7 @@ app.include_router(qa_router, prefix=v1_prefix)
 app.include_router(export_router, prefix=v1_prefix)
 app.include_router(assets_router, prefix=v1_prefix)
 app.include_router(capabilities_router, prefix=v1_prefix)
+app.include_router(auth_router, prefix=v1_prefix)
 
 @app.get("/health")
 async def health_check():

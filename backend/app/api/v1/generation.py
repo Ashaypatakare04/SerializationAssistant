@@ -14,6 +14,7 @@ from backend.app.services.storage import storage_service
 from backend.app.workers.job_runner import job_runner
 
 from backend.app.core.security import get_current_user_id, verify_project_access
+from backend.app.services.quota_service import quota_service
 
 router = APIRouter(tags=["Generation"])
 
@@ -41,6 +42,7 @@ async def trigger_panel_generation(
 
     project_id = panel.beat.scene.episode.adaptation_plan.project_id
     await verify_project_access(project_id, user_id, db)
+    await quota_service.check_generation_quota(project_id, db)
 
     # REQUIREMENT 2.5 & TEST 6: Enforce Approval Gate for Final Generation
     if data.stage == "final" and not panel.is_approved:
@@ -79,6 +81,7 @@ async def trigger_asset_edit(
         raise HTTPException(status_code=404, detail="Asset not found.")
 
     await verify_project_access(asset.project_id, user_id, db)
+    await quota_service.check_generation_quota(asset.project_id, db)
 
     mask_storage_key = data.mask_storage_key
     if data.mask_base64 and not mask_storage_key:
@@ -131,6 +134,7 @@ async def inpaint_panel(
 
     project_id = panel.beat.scene.episode.adaptation_plan.project_id
     await verify_project_access(project_id, user_id, db)
+    await quota_service.check_generation_quota(project_id, db)
 
     # Resolve active asset
     asset_id = panel.active_asset_id

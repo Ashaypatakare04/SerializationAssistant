@@ -5,26 +5,36 @@ import hashlib
 import json
 import base64
 import time
-from typing import Optional
+from typing import Optional, Dict, Any, List
 from pathlib import Path
-from fastapi import HTTPException, Security, status
-from fastapi.security import APIKeyHeader
+from pydantic import BaseModel
+from fastapi import HTTPException, Security, Depends, status
+from fastapi.security import APIKeyHeader, HTTPBearer, HTTPAuthorizationCredentials
 from backend.app.core.config import settings
 
 api_key_header = APIKeyHeader(name="X-Studio-Auth", auto_error=False)
+http_bearer = HTTPBearer(auto_error=False)
 
-def create_access_token(user_id: str, expires_in: int = 86400) -> str:
-    """Creates a URL-safe HMAC-SHA256 signed bearer token."""
+
+class UserContext(BaseModel):
+    user_id: str
+    role: str = "creator"  # "owner", "admin", "art_director", "writer", "storyboarder", "creator"
+
+
+def create_access_token(user_id: str, role: str = "creator", expires_in: int = 86400) -> str:
+    """Creates a URL-safe HMAC-SHA256 signed bearer token with user_id and studio role."""
     payload = {
         "sub": user_id,
+        "role": role,
         "exp": int(time.time()) + expires_in
     }
     raw = json.dumps(payload, separators=(',', ':')).encode('utf-8')
     sig = hmac.new(settings.SECRET_KEY.encode('utf-8'), raw, hashlib.sha256).digest()
     return f"{base64.urlsafe_b64encode(raw).decode('utf-8')}.{base64.urlsafe_b64encode(sig).decode('utf-8')}"
 
-def verify_token(token: str) -> Optional[str]:
-    """Verifies HMAC signature and expiration timestamp. Returns user_id if valid."""
+
+def verify_token_payload(token: str) -> Optional[Dict[str, Any]]:
+    """Verifies HMAC signature and expiration timestamp. Returns token payload dict if valid."""
     try:
         parts = token.strip().split(".")
         if len(parts) != 2:
@@ -37,9 +47,16 @@ def verify_token(token: str) -> Optional[str]:
         payload = json.loads(raw.decode('utf-8'))
         if payload.get("exp", 0) < time.time():
             return None
-        return payload.get("sub")
+        return payload
     except Exception:
         return None
+
+
+def verify_token(token: str) -> Optional[str]:
+    """Verifies token and returns sub (user_id). Preserves backwards compatibility."""
+    payload = verify_token_payload(token)
+    return payload.get("sub") if payload else None
+
 
 def validate_safe_filename(filename: str) -> str:
     """Sanitize filename to prevent directory traversal or reserved names."""
@@ -48,6 +65,7 @@ def validate_safe_filename(filename: str) -> str:
     if not clean or clean.startswith("."):
         return f"safe_{clean}" if clean else "unnamed_file"
     return clean
+
 
 def get_safe_storage_path(base_dir: str, rel_path: str) -> Path:
     """Ensure resolved path stays strictly within base directory."""
@@ -62,36 +80,47 @@ def get_safe_storage_path(base_dir: str, rel_path: str) -> Path:
         )
     return target
 
+
 def sanitize_untrusted_text(content: str) -> str:
     """
     Sanitize untrusted manuscript content to prevent prompt injection 
     from overwriting system directives when fed to AI models.
     """
-    # Neutralize common system prompt delimiter hijacking attempts
     neutralized = content.replace("```system", "'''system")
     neutralized = re.sub(r"(?i)<\s*(system|instruction|developer)\s*>", r"[\1]", neutralized)
     return neutralized
 
-def get_current_user_id(auth_header: str = Security(api_key_header)) -> str:
+
+def extract_raw_auth_token(
+    x_studio_auth: Optional[str] = Security(api_key_header),
+    bearer_creds: Optional[HTTPAuthorizationCredentials] = Security(http_bearer)
+) -> Optional[str]:
+    """Extracts raw token from either Authorization: Bearer <token> or X-Studio-Auth: <token>."""
+    if bearer_creds and bearer_creds.credentials:
+        return bearer_creds.credentials.strip()
+    if x_studio_auth:
+        clean = x_studio_auth.strip()
+        if clean.lower().startswith("bearer "):
+            return clean[7:].strip()
+        return clean
+    return None
+
+
+def get_current_user(raw_token: Optional[str] = Depends(extract_raw_auth_token)) -> UserContext:
     """
     Identity and access resolution with strict environment separation.
-    
-    In DEVELOPMENT or TEST modes:
-      - Accepts verified signed token or plain user_id string for local testing convenience.
-      - Falls back to 'creator_default_user' when no header is supplied.
-      
-    In PRODUCTION mode (Fail-Closed Zero-Trust):
-      - Rejects arbitrary unverified string identity assertion.
-      - Fails closed (500) if SECRET_KEY is left at insecure dev default.
-      - Requires a cryptographically valid HMAC signed token.
+    Returns UserContext with user_id and studio role.
     """
     is_dev = settings.APP_ENV in ("development", "test")
-    
+
     if is_dev:
-        if auth_header:
-            token_user = verify_token(auth_header)
-            return token_user if token_user else auth_header
-        return "creator_default_user"
+        if raw_token:
+            payload = verify_token_payload(raw_token)
+            if payload:
+                return UserContext(user_id=payload["sub"], role=payload.get("role", "creator"))
+            # Dev raw string fallback
+            return UserContext(user_id=raw_token, role="creator")
+        return UserContext(user_id="creator_default_user", role="creator")
 
     # PRODUCTION MODE - STRICT FAIL-CLOSED ZERO-TRUST
     if not settings.SECRET_KEY or settings.SECRET_KEY == "dev-secret-key-studio-insecure-only-for-local":
@@ -100,20 +129,49 @@ def get_current_user_id(auth_header: str = Security(api_key_header)) -> str:
             detail="Production misconfiguration: SECRET_KEY must be securely configured."
         )
 
-    if not auth_header:
+    if not raw_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing required authentication token."
         )
 
-    user_id = verify_token(auth_header)
-    if not user_id:
+    payload = verify_token_payload(raw_token)
+    if not payload:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid, expired, or unverified authentication token. Arbitrary identity assertion is forbidden in production."
         )
 
-    return user_id
+    return UserContext(user_id=payload["sub"], role=payload.get("role", "creator"))
+
+
+def get_current_user_id(user_ctx: UserContext = Depends(get_current_user)) -> str:
+    """Convenience dependency returning user_id string for existing endpoints."""
+    return user_ctx.user_id
+
+
+def require_roles(allowed_roles: List[str]):
+    """Returns dependency checking that current user has one of allowed roles."""
+    def _role_checker(user_ctx: UserContext = Depends(get_current_user)) -> UserContext:
+        if user_ctx.role not in allowed_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Role '{user_ctx.role}' is not authorized for this operation. Requires one of: {allowed_roles}."
+            )
+        return user_ctx
+    return _role_checker
+
+
+def require_art_director_or_owner(user_ctx: UserContext = Depends(get_current_user)) -> UserContext:
+    """Enforces that only art directors, admins, or owners can execute creative approval gates."""
+    allowed = {"owner", "admin", "art_director", "creator"}
+    if user_ctx.role not in allowed:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Role '{user_ctx.role}' is not authorized to approve creative artifacts. Requires 'art_director', 'owner', or 'admin' role."
+        )
+    return user_ctx
+
 
 async def verify_project_access(
     project_id: str,
@@ -151,7 +209,7 @@ async def verify_project_access(
             detail="Access denied: You do not have permission to view or modify this project."
         )
 
-    if require_owner and member.role != "owner":
+    if require_owner and member.role not in ("owner", "admin"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied: Project owner privileges required."
