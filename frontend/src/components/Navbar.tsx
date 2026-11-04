@@ -2,7 +2,7 @@
 
 import React from "react";
 import { Project } from "../types";
-import { Layers, ShieldCheck, Sparkles, BookOpen, Palette, Film, Eye, Download, Info } from "lucide-react";
+import { Layers, ShieldCheck, Sparkles, BookOpen, Palette, Film, Eye, Download, Info, Settings, Shield } from "lucide-react";
 
 interface NavbarProps {
   currentProject: Project | null;
@@ -11,6 +11,8 @@ interface NavbarProps {
   onOpenDashboard: () => void;
   onOpenQA: () => void;
   onOpenCapabilities: () => void;
+  onOpenSettings?: () => void;
+  activeRole?: string;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -20,6 +22,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenDashboard,
   onOpenQA,
   onOpenCapabilities,
+  onOpenSettings,
+  activeRole = "owner",
 }) => {
   const tabs = [
     { id: "source", label: "1. Story Bible", icon: BookOpen },
@@ -104,6 +108,18 @@ export const Navbar: React.FC<NavbarProps> = ({
             <Info className="w-3.5 h-3.5 text-studio-cyan" />
             <span className="hidden sm:inline">AI Engine</span>
           </button>
+
+          {onOpenSettings && (
+            <button
+              onClick={onOpenSettings}
+              className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg bg-studio-800 hover:bg-studio-700 border border-studio-700 text-studio-200 text-xs font-medium transition"
+              title="Studio Roles & Backend Connection Settings"
+            >
+              <Shield className="w-3.5 h-3.5 text-studio-accent" />
+              <span className="capitalize">{activeRole.replace("_", " ")}</span>
+              <Settings className="w-3 h-3 text-studio-400" />
+            </button>
+          )}
 
           <button
             onClick={onOpenDashboard}

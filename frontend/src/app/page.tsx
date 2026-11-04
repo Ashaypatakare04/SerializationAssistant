@@ -13,6 +13,7 @@ import { IllustrationReview } from "../components/IllustrationReview";
 import { WebtoonReader } from "../components/WebtoonReader";
 import { QAReportModal } from "../components/QAReportModal";
 import { CapabilitiesModal } from "../components/CapabilitiesModal";
+import { StudioSettingsModal } from "../components/StudioSettingsModal";
 
 export default function StudioHome() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -21,6 +22,8 @@ export default function StudioHome() {
   const [showDashboard, setShowDashboard] = useState<boolean>(false);
   const [showQAModal, setShowQAModal] = useState<boolean>(false);
   const [showCapabilitiesModal, setShowCapabilitiesModal] = useState<boolean>(false);
+  const [showSettingsModal, setShowSettingsModal] = useState<boolean>(false);
+  const [activeRole, setActiveRole] = useState<string>("owner");
 
   // Loaded project artifacts
   const [storyBible, setStoryBible] = useState<StoryBible | null>(null);
@@ -202,6 +205,8 @@ Soo-jin emerged from the doorway of the vintage cafe. "You're seven minutes late
         onOpenDashboard={() => setShowDashboard(true)}
         onOpenQA={() => setShowQAModal(true)}
         onOpenCapabilities={() => setShowCapabilitiesModal(true)}
+        onOpenSettings={() => setShowSettingsModal(true)}
+        activeRole={activeRole}
       />
 
       <main className="flex-1 pb-16">
@@ -284,6 +289,16 @@ Soo-jin emerged from the doorway of the vintage cafe. "You're seven minutes late
       {showCapabilitiesModal && (
         <CapabilitiesModal
           onClose={() => setShowCapabilitiesModal(false)}
+        />
+      )}
+
+      {/* Studio Settings & RBAC Role Modal */}
+      {showSettingsModal && (
+        <StudioSettingsModal
+          isOpen={showSettingsModal}
+          onClose={() => setShowSettingsModal(false)}
+          currentProjectId={currentProject?.id}
+          onRoleChanged={(r) => setActiveRole(r)}
         />
       )}
     </div>

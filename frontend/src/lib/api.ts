@@ -12,12 +12,28 @@ import {
   ReferenceAsset
 } from "../types";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api/v1";
+export function getApiBaseUrl(): string {
+  if (typeof window !== "undefined") {
+    const override = localStorage.getItem("studio_api_url");
+    if (override) return override;
+  }
+  return process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api/v1";
+}
+
+export function setApiBaseUrl(url: string): void {
+  if (typeof window !== "undefined") {
+    if (!url) {
+      localStorage.removeItem("studio_api_url");
+    } else {
+      localStorage.setItem("studio_api_url", url.trim().replace(/\/+$/, ""));
+    }
+  }
+}
 
 export function getStorageUrl(storageKey: string): string {
   if (!storageKey) return "";
   if (storageKey.startsWith("http")) return storageKey;
-  return `${API_BASE}/storage/${storageKey}`;
+  return `${getApiBaseUrl()}/storage/${storageKey}`;
 }
 
 export function getAuthToken(): string {
@@ -35,7 +51,7 @@ export function setAuthToken(token: string): void {
 }
 
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-  const url = `${API_BASE}${endpoint}`;
+  const url = `${getApiBaseUrl()}${endpoint}`;
   const token = getAuthToken();
   const headers = {
     "X-Studio-Auth": token,
@@ -165,9 +181,11 @@ export const api = {
   
   streamJob: async (jobId: string, onProgress?: (job: Job) => void): Promise<Job> => {
     try {
-      const response = await fetch(`${API_BASE}/jobs/${jobId}/stream`, {
+      const token = getAuthToken();
+      const response = await fetch(`${getApiBaseUrl()}/jobs/${jobId}/stream`, {
         headers: {
-          "X-Studio-Auth": "creator_default_user",
+          "X-Studio-Auth": token,
+          "Authorization": `Bearer ${token}`,
           "Accept": "text/event-stream",
         },
       });
@@ -250,4 +268,34 @@ export const api = {
   // Capabilities
   getCapabilities: () =>
     request<any>("/system/capabilities"),
+
+  // Auth, Roles & Diagnostics
+  issueToken: (data: { user_id: string; role: string; expires_in?: number }) =>
+    request<{ access_token: string; token_type: string; user_id: string; role: string }>("/auth/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+
+  getMe: () =>
+    request<{ user_id: string; role: string }>("/auth/me"),
+
+  getQuota: (projectId: string) =>
+    request<{
+      project_id: string;
+      daily_used_generations: number;
+      daily_quota_limit: number;
+      remaining_generations: number;
+    }>(`/auth/quota/${projectId}`),
+
+  checkHealth: async (): Promise<boolean> => {
+    try {
+      const apiBase = getApiBaseUrl();
+      const healthUrl = apiBase.replace(/\/api\/v1\/?$/, "/health");
+      const res = await fetch(healthUrl, { method: "GET" });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  },
 };
