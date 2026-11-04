@@ -20,10 +20,26 @@ export function getStorageUrl(storageKey: string): string {
   return `${API_BASE}/storage/${storageKey}`;
 }
 
+export function getAuthToken(): string {
+  if (typeof window !== "undefined") {
+    const stored = localStorage.getItem("studio_auth_token");
+    if (stored) return stored;
+  }
+  return "creator_default_user";
+}
+
+export function setAuthToken(token: string): void {
+  if (typeof window !== "undefined") {
+    localStorage.setItem("studio_auth_token", token);
+  }
+}
+
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const url = `${API_BASE}${endpoint}`;
+  const token = getAuthToken();
   const headers = {
-    "X-Studio-Auth": "creator_default_user",
+    "X-Studio-Auth": token,
+    "Authorization": `Bearer ${token}`,
     ...options.headers,
   };
 

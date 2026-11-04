@@ -1,0 +1,71 @@
+version: "3.8"
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: webtoon_postgres
+    restart: always
+    environment:
+      POSTGRES_DB: webtoon_studio
+      POSTGRES_USER: studio_user
+      POSTGRES_PASSWORD: studio_secure_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U studio_user -d webtoon_studio"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: webtoon_backend
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      APP_ENV: production
+      SECRET_KEY: change-this-to-a-secure-32-character-random-secret
+      DATABASE_URL: postgresql+asyncpg://studio_user:studio_secure_password@db:5432/webtoon_studio
+      STORAGE_BACKEND: local
+      STORAGE_LOCAL_DIR: /app/storage
+      LLM_PROVIDER: mock
+      IMAGE_PROVIDER: mock
+      ALLOWED_ORIGINS: "http://localhost:3000,https://webtoon-studio-ai.vercel.app"
+    volumes:
+      - backend_storage:/app/storage
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: webtoon_worker
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    command: ["python", "-m", "backend.app.workers.standalone_worker", "--concurrency", "4"]
+    environment:
+      APP_ENV: production
+      SECRET_KEY: change-this-to-a-secure-32-character-random-secret
+      DATABASE_URL: postgresql+asyncpg://studio_user:studio_secure_password@db:5432/webtoon_studio
+      STORAGE_BACKEND: local
+      STORAGE_LOCAL_DIR: /app/storage
+      LLM_PROVIDER: mock
+      IMAGE_PROVIDER: mock
+      STANDALONE_WORKER: "true"
+    volumes:
+      - backend_storage:/app/storage
+
+volumes:
+  pgdata:
+  backend_storage:

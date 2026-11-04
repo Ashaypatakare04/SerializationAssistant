@@ -46,7 +46,13 @@ async def stream_job_status(
     async def event_generator():
         last_status = None
         last_progress = None
+        heartbeat_ticks = 0
         while True:
+            heartbeat_ticks += 1
+            # Send SSE keep-alive heartbeat comment every ~10s to prevent cloud proxy disconnects
+            if heartbeat_ticks % 25 == 0:
+                yield ": keepalive\n\n"
+
             async with AsyncSessionLocal() as session:
                 j_stmt = select(Job).where(Job.id == job_id)
                 j_res = await session.execute(j_stmt)
