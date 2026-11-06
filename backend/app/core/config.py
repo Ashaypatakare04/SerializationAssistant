@@ -39,6 +39,14 @@ class Settings(BaseSettings):
     @classmethod
     def assemble_db_connection(cls, v: str) -> str:
         if isinstance(v, str):
+            v = v.strip()
+            # Guard against unexpanded Railway template references
+            if v.startswith("${{") or v.startswith("${"):
+                raise ValueError(
+                    f"DATABASE_URL contains an unexpanded variable template: '{v}'. "
+                    f"In Railway, your database service is named 'webtoon-postgres', "
+                    f"so reference '${{{{webtoon-postgres.DATABASE_URL}}}}' instead."
+                )
             if v.startswith("postgres://"):
                 return v.replace("postgres://", "postgresql+asyncpg://", 1)
             elif v.startswith("postgresql://") and not v.startswith("postgresql+asyncpg://"):
