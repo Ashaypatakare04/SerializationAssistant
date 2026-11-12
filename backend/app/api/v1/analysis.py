@@ -80,6 +80,15 @@ async def update_story_bible(
         setattr(bible, field, val)
 
     await db.commit()
-    await db.refresh(bible)
-    return bible
+    refetched = await db.execute(
+        select(StoryBible)
+        .options(
+            selectinload(StoryBible.characters).selectinload(Character.versions),
+            selectinload(StoryBible.events),
+            selectinload(StoryBible.continuity_facts),
+            selectinload(StoryBible.relationships)
+        )
+        .where(StoryBible.id == bible.id)
+    )
+    return refetched.scalar_one()
 

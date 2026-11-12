@@ -7,7 +7,8 @@ class Base(DeclarativeBase):
     pass
 
 def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    """Returns naive UTC datetime compatible with SQLite and PostgreSQL TIMESTAMP WITHOUT TIME ZONE."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 class TimestampMixin:
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, nullable=False)

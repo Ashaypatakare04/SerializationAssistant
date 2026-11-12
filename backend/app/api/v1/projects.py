@@ -42,8 +42,9 @@ async def create_project(
     db.add(member)
 
     await db.commit()
-    await db.refresh(project)
-    return project
+    proj_stmt = select(Project).options(selectinload(Project.documents)).where(Project.id == project.id)
+    proj_res = await db.execute(proj_stmt)
+    return proj_res.scalar_one()
 
 @router.get("", response_model=List[ProjectResponse])
 async def list_projects(
@@ -92,8 +93,9 @@ async def update_project(
         setattr(project, field, val)
 
     await db.commit()
-    await db.refresh(project)
-    return project
+    proj_stmt = select(Project).options(selectinload(Project.documents)).where(Project.id == project.id)
+    proj_res = await db.execute(proj_stmt)
+    return proj_res.scalar_one()
 
 from pydantic import BaseModel, Field
 
