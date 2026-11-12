@@ -21,15 +21,14 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     """Upgrade schema with cross-database partial unique index for panel assets."""
     bind = op.get_bind()
-    dialect = bind.dialect.name
-    # Create partial unique index if it doesn't already exist
-    try:
-        if dialect == "sqlite":
-            op.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_panel_asset_type ON assets(panel_id, asset_type) WHERE panel_id IS NOT NULL;")
-        elif dialect == "postgresql":
-            op.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_panel_asset_type ON assets(panel_id, asset_type) WHERE panel_id IS NOT NULL;")
-    except Exception:
-        pass
+    inspector = sa.inspect(bind)
+    if not inspector.has_table("assets"):
+        # Initial schema creation is handled by Base.metadata.create_all in init_db()
+        return
+    op.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_panel_asset_type "
+        "ON assets(panel_id, asset_type) WHERE panel_id IS NOT NULL;"
+    )
 
 
 def downgrade() -> None:

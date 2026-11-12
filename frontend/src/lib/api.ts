@@ -50,18 +50,99 @@ export function setAuthToken(token: string): void {
   }
 }
 
-async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-  const url = `${getApiBaseUrl()}${endpoint}`;
-  const token = getAuthToken();
-  const headers = {
+export function getStoredUserId(): string {
+  if (typeof window !== "undefined") {
+    return localStorage.getItem("studio_user_id") || "studio_creator";
+  }
+  return "studio_creator";
+}
+
+export function setStoredIdentity(userId: string, role: string): void {
+  if (typeof window !== "undefined") {
+    localStorage.setItem("studio_user_id", userId);
+    localStorage.setItem("studio_user_role", role);
+  }
+}
+
+function isSignedToken(token: string | null): boolean {
+  if (!token) return false;
+  const parts = token.split(".");
+  return parts.length === 2 && parts[0].length > 0 && parts[1].length > 0;
+}
+
+let pendingTokenPromise: Promise<string> | null = null;
+
+export async function ensureAuthToken(forceRefresh = false): Promise<string> {
+  if (typeof window === "undefined") {
+    return getAuthToken();
+  }
+
+  const stored = localStorage.getItem("studio_auth_token");
+  if (!forceRefresh && isSignedToken(stored)) {
+    return stored as string;
+  }
+
+  if (pendingTokenPromise) {
+    return pendingTokenPromise;
+  }
+
+  const userId = localStorage.getItem("studio_user_id") || "studio_creator";
+  const role = localStorage.getItem("studio_user_role") || "owner";
+
+  pendingTokenPromise = (async () => {
+    const response = await fetch(`${getApiBaseUrl()}/auth/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: userId, role }),
+    });
+    if (!response.ok) {
+      throw new Error(`Authentication failed (${response.status} ${response.statusText})`);
+    }
+    const data = await response.json();
+    setAuthToken(data.access_token);
+    setStoredIdentity(data.user_id, data.role);
+    return data.access_token as string;
+  })();
+
+  try {
+    return await pendingTokenPromise;
+  } finally {
+    pendingTokenPromise = null;
+  }
+}
+
+async function fetchWithAuth(url: string, options: RequestInit = {}, skipAuthBootstrap = false): Promise<Response> {
+  const token = skipAuthBootstrap ? getAuthToken() : await ensureAuthToken();
+  const headers: Record<string, string> = {
+    ...(options.headers as Record<string, string> | undefined),
     "X-Studio-Auth": token,
     "Authorization": `Bearer ${token}`,
-    ...options.headers,
   };
 
-  const response = await fetch(url, { ...options, headers });
+  let response = await fetch(url, { ...options, headers });
+
+  if (response.status === 401 && !skipAuthBootstrap) {
+    const refreshedToken = await ensureAuthToken(true);
+    response = await fetch(url, {
+      ...options,
+      headers: {
+        ...headers,
+        "X-Studio-Auth": refreshedToken,
+        "Authorization": `Bearer ${refreshedToken}`,
+      },
+    });
+  }
+
+  return response;
+}
+
+async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+  const url = `${getApiBaseUrl()}${endpoint}`;
+  const isTokenEndpoint = endpoint === "/auth/token";
+  const response = await fetchWithAuth(url, options, isTokenEndpoint);
+
   if (!response.ok) {
-    let errorDetail = response.statusText;
+    let errorDetail = response.statusText || `HTTP ${response.status}`;
     try {
       const errJson = await response.json();
       errorDetail = errJson.detail || errorDetail;
@@ -181,11 +262,8 @@ export const api = {
   
   streamJob: async (jobId: string, onProgress?: (job: Job) => void): Promise<Job> => {
     try {
-      const token = getAuthToken();
-      const response = await fetch(`${getApiBaseUrl()}/jobs/${jobId}/stream`, {
+      const response = await fetchWithAuth(`${getApiBaseUrl()}/jobs/${jobId}/stream`, {
         headers: {
-          "X-Studio-Auth": token,
-          "Authorization": `Bearer ${token}`,
           "Accept": "text/event-stream",
         },
       });
@@ -264,6 +342,37 @@ export const api = {
     }),
   getExport: (exportId: string) =>
     request<any>(`/exports/${exportId}`),
+  downloadExportZip: async (exportId: string): Promise<void> => {
+    const response = await fetchWithAuth(`${getApiBaseUrl()}/exports/${exportId}/download`);
+    if (!response.ok) {
+      let detail = response.statusText || "Export download failed.";
+      try {
+        const err = await response.json();
+        detail = err.detail || detail;
+      } catch {
+        // ignore parse failure
+      }
+      throw new Error(detail);
+    }
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = objectUrl;
+    link.download = `webtoon_export_${exportId.slice(0, 8)}.zip`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+  },
+
+  fetchStorageBlob: async (storageKey: string): Promise<Blob> => {
+    const url = getStorageUrl(storageKey);
+    const response = await fetchWithAuth(url);
+    if (!response.ok) {
+      throw new Error(`Failed to load asset (${response.status})`);
+    }
+    return response.blob();
+  },
 
   // Capabilities
   getCapabilities: () =>

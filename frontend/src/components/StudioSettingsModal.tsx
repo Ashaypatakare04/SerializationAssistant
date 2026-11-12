@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { X, Server, Shield, CheckCircle2, AlertCircle, RefreshCw, Zap, Key } from "lucide-react";
-import { api, getApiBaseUrl, setApiBaseUrl, getAuthToken, setAuthToken } from "../lib/api";
+import { api, getApiBaseUrl, setApiBaseUrl, setAuthToken, getStoredUserId, setStoredIdentity } from "../lib/api";
 
 interface StudioSettingsModalProps {
   isOpen: boolean;
@@ -54,10 +54,10 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
       const me = await api.getMe();
       setCurrentRole(me.role);
       setCurrentUserId(me.user_id);
+      setStoredIdentity(me.user_id, me.role);
     } catch {
-      // fallback
       setCurrentRole("owner");
-      setCurrentUserId("creator_default_user");
+      setCurrentUserId(getStoredUserId());
     }
   };
 
@@ -83,9 +83,11 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
   const handleSwitchRole = async (role: string) => {
     setIsUpdatingRole(true);
     try {
-      const userId = `${role}_lead`;
+      // Preserve current user_id so switching roles tests RBAC without losing project ownership
+      const userId = currentUserId || getStoredUserId();
       const res = await api.issueToken({ user_id: userId, role });
       setAuthToken(res.access_token);
+      setStoredIdentity(res.user_id, res.role);
       setCurrentRole(res.role);
       setCurrentUserId(res.user_id);
       if (onRoleChanged) {
@@ -181,7 +183,7 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
               />
               <button
                 onClick={handleSaveApiUrl}
-                className="px-3 py-2 rounded-lg bg-studio-accent hover:bg-studio-accent-hover text-white text-xs font-medium transition shadow-sm"
+                className="px-3 py-2 rounded-lg bg-studio-accent hover:bg-studio-accentHover text-white text-xs font-medium transition shadow-sm"
               >
                 Save
               </button>
@@ -209,11 +211,13 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                 return (
                   <div
                     key={r.id}
-                    onClick={() => handleSwitchRole(r.id)}
-                    className={`p-3 rounded-xl border transition cursor-pointer flex items-center justify-between ${
+                    onClick={() => {
+                      if (!isActive && !isUpdatingRole) handleSwitchRole(r.id);
+                    }}
+                    className={`p-3 rounded-xl border transition flex items-center justify-between ${
                       isActive
                         ? "bg-studio-accent/10 border-studio-accent shadow-sm"
-                        : "bg-studio-800/30 border-studio-800 hover:border-studio-700 hover:bg-studio-800/60"
+                        : "cursor-pointer bg-studio-800/30 border-studio-800 hover:border-studio-700 hover:bg-studio-800/60"
                     }`}
                   >
                     <div className="space-y-0.5">

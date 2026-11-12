@@ -6,6 +6,7 @@ import { Plus, FolderGit2, Calendar, FileText, ArrowRight, Sparkles } from "luci
 
 interface ProjectDashboardProps {
   projects: Project[];
+  isLoadingDemo?: boolean;
   onSelectProject: (project: Project) => void;
   onCreateProject: (title: string, description: string, genre: string) => Promise<void>;
   onSeedDemoProject: () => Promise<void>;
@@ -13,6 +14,7 @@ interface ProjectDashboardProps {
 
 export const ProjectDashboard: React.FC<ProjectDashboardProps> = ({
   projects,
+  isLoadingDemo = false,
   onSelectProject,
   onCreateProject,
   onSeedDemoProject,
@@ -22,16 +24,20 @@ export const ProjectDashboard: React.FC<ProjectDashboardProps> = ({
   const [description, setDescription] = useState("");
   const [genre, setGenre] = useState("Urban Mystery / Drama");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
     setIsSubmitting(true);
+    setSubmitError(null);
     try {
       await onCreateProject(title, description, genre);
       setShowModal(false);
       setTitle("");
       setDescription("");
+    } catch (err: any) {
+      setSubmitError(err?.message || "Failed to create project. Check backend settings.");
     } finally {
       setIsSubmitting(false);
     }
@@ -54,10 +60,11 @@ export const ProjectDashboard: React.FC<ProjectDashboardProps> = ({
         <div className="flex items-center space-x-3">
           <button
             onClick={onSeedDemoProject}
-            className="flex items-center space-x-2 px-3.5 py-2 rounded-lg bg-studio-800 hover:bg-studio-700 border border-studio-700 text-xs font-semibold text-studio-200 transition shadow"
+            disabled={isLoadingDemo}
+            className="flex items-center space-x-2 px-3.5 py-2 rounded-lg bg-studio-800 hover:bg-studio-700 border border-studio-700 text-xs font-semibold text-studio-200 transition shadow disabled:opacity-50"
           >
             <Sparkles className="w-4 h-4 text-studio-accent" />
-            <span>Load Demo Pilot</span>
+            <span>{isLoadingDemo ? "Loading Demo..." : "Load Demo Pilot"}</span>
           </button>
 
           <button
@@ -144,6 +151,11 @@ export const ProjectDashboard: React.FC<ProjectDashboardProps> = ({
             </p>
 
             <form onSubmit={handleSubmit} className="space-y-4">
+              {submitError && (
+                <div className="p-2.5 rounded-lg bg-rose-950/60 border border-rose-700 text-rose-200 text-xs">
+                  {submitError}
+                </div>
+              )}
               <div>
                 <label className="block text-xs font-semibold text-studio-300 mb-1">
                   Project Title *

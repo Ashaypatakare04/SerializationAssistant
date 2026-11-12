@@ -33,9 +33,13 @@ export default function StudioHome() {
   const [documents, setDocuments] = useState<SourceDocument[]>([]);
   const [references, setReferences] = useState<ReferenceAsset[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [globalError, setGlobalError] = useState<string | null>(null);
 
   const loadProjects = React.useCallback(async () => {
+    setGlobalError(null);
     try {
+      const me = await api.getMe().catch(() => null);
+      if (me?.role) setActiveRole(me.role);
       const data = await api.getProjects();
       setProjects(data);
       if (data.length > 0) {
@@ -43,8 +47,10 @@ export default function StudioHome() {
       } else if (data.length === 0) {
         setShowDashboard(true);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to load projects", err);
+      setGlobalError(err?.message || "Unable to connect to backend API. Check Studio Settings.");
+      setShowDashboard(true);
     } finally {
       setIsLoading(false);
     }
@@ -107,6 +113,7 @@ export default function StudioHome() {
 
   const handleSeedDemoPilot = async () => {
     setIsLoading(true);
+    setGlobalError(null);
     try {
       // 1. Create Demo Project
       const demoProject = await api.createProject({
@@ -183,8 +190,9 @@ Soo-jin emerged from the doorway of the vintage cafe. "You're seven minutes late
       setCurrentProject(demoProject);
       setShowDashboard(false);
       setActiveTab("storyboard");
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to seed demo pilot", err);
+      setGlobalError(err?.message || "Failed to load demo pilot. Check backend connection in Settings.");
     } finally {
       setIsLoading(false);
     }
@@ -210,9 +218,32 @@ Soo-jin emerged from the doorway of the vintage cafe. "You're seven minutes late
       />
 
       <main className="flex-1 pb-16">
+        {globalError && (
+          <div className="max-w-6xl mx-auto px-4 pt-4">
+            <div className="p-3 rounded-lg bg-rose-950/60 border border-rose-700 text-rose-200 text-xs flex items-center justify-between gap-3">
+              <span>{globalError}</span>
+              <div className="flex items-center space-x-2 shrink-0">
+                <button
+                  onClick={() => setShowSettingsModal(true)}
+                  className="px-2.5 py-1 rounded bg-rose-800 hover:bg-rose-700 text-white font-semibold"
+                >
+                  Open Settings
+                </button>
+                <button
+                  onClick={() => setGlobalError(null)}
+                  className="px-2 py-1 rounded text-rose-300 hover:text-white"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {showDashboard || !currentProject ? (
           <ProjectDashboard
             projects={projects}
+            isLoadingDemo={isLoading}
             onSelectProject={(proj) => {
               setCurrentProject(proj);
               setShowDashboard(false);

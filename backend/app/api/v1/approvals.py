@@ -23,10 +23,16 @@ async def record_approval(
     user_ctx: UserContext = Depends(require_art_director_or_owner)
 ):
     user_id = user_ctx.user_id
+    resolved_project_id = await approval_service.resolve_project_id(
+        db=db,
+        artifact_type=data.artifact_type,
+        artifact_id=artifact_id,
+    )
+
     try:
         approval = await approval_service.record_approval(
             db=db,
-            project_id=data.artifact_id if data.artifact_type == "project" else "default",
+            project_id=resolved_project_id or data.artifact_id,
             artifact_type=data.artifact_type,
             artifact_id=artifact_id,
             artifact_version=data.artifact_version,

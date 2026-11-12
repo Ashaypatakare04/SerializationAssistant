@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { Episode, Panel, Asset, AssetVersion } from "../types";
-import { api, getStorageUrl } from "../lib/api";
+import { api } from "../lib/api";
+import { AuthImage } from "./AuthImage";
 import {
   Sparkles,
   CheckCircle,
@@ -62,7 +63,18 @@ export const IllustrationReview: React.FC<IllustrationReviewProps> = ({
   }, [episode]);
 
   useEffect(() => {
-    if (allPanels.length > 0 && !selectedPanel) {
+    if (allPanels.length === 0) {
+      if (selectedPanel) setSelectedPanel(null);
+      return;
+    }
+    if (!selectedPanel) {
+      setSelectedPanel(allPanels[0]);
+      return;
+    }
+    const updated = allPanels.find((p) => p.id === selectedPanel.id);
+    if (updated && updated !== selectedPanel) {
+      setSelectedPanel(updated);
+    } else if (!updated) {
       setSelectedPanel(allPanels[0]);
     }
   }, [allPanels, selectedPanel]);
@@ -521,10 +533,9 @@ export const IllustrationReview: React.FC<IllustrationReviewProps> = ({
                 {activeVersion ? (
                   <>
                     {/* Base Panel Artwork */}
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
+                    <AuthImage
                       ref={imgRef}
-                      src={getStorageUrl(activeVersion.storage_key)}
+                      storageKey={activeVersion.storage_key}
                       alt={`Panel ${selectedPanel.panel_number}`}
                       onLoad={syncCanvasDimensions}
                       className="w-full h-full object-contain pointer-events-none select-none"

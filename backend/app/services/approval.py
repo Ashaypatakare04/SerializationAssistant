@@ -1,13 +1,62 @@
 from typing import Optional, Dict, Any, List
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.models.asset import Approval
 from backend.app.models.bible import StoryBible
 from backend.app.models.style import StyleProfile, StyleProfileVersion
-from backend.app.models.adaptation import AdaptationPlan, Panel, Episode
+from backend.app.models.adaptation import AdaptationPlan, Panel, Episode, Scene, Beat
 from backend.app.models.asset import Asset, AssetVersion
 
 class ApprovalService:
+    @classmethod
+    async def resolve_project_id(
+        cls,
+        db: AsyncSession,
+        artifact_type: str,
+        artifact_id: str,
+    ) -> Optional[str]:
+        """Resolves the owning project_id for an artifact to satisfy FK and access checks."""
+        if artifact_type == "project":
+            return artifact_id
+        if artifact_type == "story_bible":
+            res = await db.execute(select(StoryBible.project_id).where(StoryBible.id == artifact_id))
+            return res.scalar_one_or_none()
+        if artifact_type == "style_profile":
+            res = await db.execute(select(StyleProfile.project_id).where(StyleProfile.id == artifact_id))
+            return res.scalar_one_or_none()
+        if artifact_type == "adaptation_plan":
+            res = await db.execute(select(AdaptationPlan.project_id).where(AdaptationPlan.id == artifact_id))
+            return res.scalar_one_or_none()
+        if artifact_type == "panel":
+            stmt = (
+                select(AdaptationPlan.project_id)
+                .join(Episode, Episode.adaptation_plan_id == AdaptationPlan.id)
+                .join(Scene, Scene.episode_id == Episode.id)
+                .join(Beat, Beat.scene_id == Scene.id)
+                .join(Panel, Panel.beat_id == Beat.id)
+                .where(Panel.id == artifact_id)
+            )
+            res = await db.execute(stmt)
+            return res.scalar_one_or_none()
+        if artifact_type == "asset_version":
+            stmt = (
+                select(Asset.project_id)
+                .join(AssetVersion, AssetVersion.asset_id == Asset.id)
+                .where(AssetVersion.id == artifact_id)
+            )
+            res = await db.execute(stmt)
+            return res.scalar_one_or_none()
+        if artifact_type == "final_episode":
+            stmt = (
+                select(AdaptationPlan.project_id)
+                .join(Episode, Episode.adaptation_plan_id == AdaptationPlan.id)
+                .where(Episode.id == artifact_id)
+            )
+            res = await db.execute(stmt)
+            return res.scalar_one_or_none()
+        return None
+
     @classmethod
     async def record_approval(
         cls,

@@ -99,7 +99,7 @@ def composite_dialogue_bubbles(
                 draw.text((bx + 12, text_y), l, font=f, fill=(241, 245, 249))
                 text_y += line_h
 
-        elif seg_type == "thought":
+        elif seg_type in ("thought", "thought_bubble"):
             # Thought bubble (cloud balloon with trailing bubbles)
             draw.rounded_rectangle(
                 [bx, by, bx + bubble_w, by + bubble_h],
@@ -121,7 +121,7 @@ def composite_dialogue_bubbles(
                 draw.text((bx + 14, text_y), l, font=f, fill=(30, 41, 59))
                 text_y += line_h
 
-        elif seg_type == "sfx":
+        elif seg_type in ("sfx", "sound_effect"):
             # Sound Effect dynamic badge
             draw.rectangle(
                 [bx, by, bx + bubble_w, by + bubble_h - 6],

@@ -2,7 +2,8 @@
 
 import React, { useState } from "react";
 import { Project, ReferenceAsset, StyleProfile } from "../types";
-import { api, getStorageUrl } from "../lib/api";
+import { api } from "../lib/api";
+import { AuthImage } from "./AuthImage";
 import {
   Palette,
   UploadCloud,
@@ -206,9 +207,8 @@ export const ReferenceStyleWorkspace: React.FC<ReferenceStyleWorkspaceProps> = (
               {references.map((ref) => (
                 <div key={ref.id} className="group relative bg-studio-900 border border-studio-800 rounded-lg overflow-hidden shadow">
                   <div className="aspect-square bg-studio-950 flex items-center justify-center overflow-hidden">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={getStorageUrl(ref.storage_key)}
+                    <AuthImage
+                      storageKey={ref.storage_key}
                       alt={ref.label}
                       className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
                     />

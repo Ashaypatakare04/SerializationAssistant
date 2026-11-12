@@ -142,3 +142,38 @@ async def test_quota_tracking_and_limit_enforcement(client: AsyncClient):
             # Should fail if limit is 1
             await quota_service.check_generation_quota(project_id, session, limit=1)
         assert "429" in str(exc_info.value) or "quota exceeded" in str(exc_info.value).lower()
+
+
+@pytest.mark.asyncio
+async def test_approval_resolves_real_project_id(client: AsyncClient):
+    owner_token = create_access_token("approval_owner", role="owner")
+    owner_headers = {"Authorization": f"Bearer {owner_token}"}
+
+    res = await client.post("/api/v1/projects", json={"title": "Approval FK Project"}, headers=owner_headers)
+    assert res.status_code == 201
+    project_id = res.json()["id"]
+
+    await client.post(
+        f"/api/v1/projects/{project_id}/documents",
+        data={"raw_text": "Min-jun walked in the rain.", "filename": "ch1.txt"},
+        headers=owner_headers,
+    )
+    analysis_job = await client.post(f"/api/v1/projects/{project_id}/analysis-jobs", headers=owner_headers)
+    await wait_for_job(client, analysis_job.json()["id"], headers=owner_headers)
+
+    bible_res = await client.get(f"/api/v1/projects/{project_id}/story-bible", headers=owner_headers)
+    bible = bible_res.json()
+
+    # Owner approval resolves and stores the real project_id (not 'default')
+    owner_appr = await client.post(
+        f"/api/v1/artifacts/{bible['id']}/approvals",
+        json={
+            "artifact_type": "story_bible",
+            "artifact_id": bible["id"],
+            "artifact_version": bible["version"],
+            "approved_by": "owner",
+        },
+        headers=owner_headers,
+    )
+    assert owner_appr.status_code == 201
+    assert owner_appr.json()["project_id"] == project_id

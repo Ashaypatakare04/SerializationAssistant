@@ -129,6 +129,30 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Mobile Stage Tabs */}
+      {currentProject && (
+        <nav className="md:hidden flex items-center space-x-1 overflow-x-auto pt-2 mt-2 border-t border-studio-800">
+          {tabs.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-medium whitespace-nowrap transition ${
+                  isActive
+                    ? "bg-studio-accent text-white shadow-sm"
+                    : "text-studio-300 hover:bg-studio-800 hover:text-white"
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
+        </nav>
+      )}
     </header>
   );
 };

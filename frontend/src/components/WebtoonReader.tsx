@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect } from "react";
 import { Episode, Panel, Asset } from "../types";
-import { api, getStorageUrl } from "../lib/api";
+import { api } from "../lib/api";
+import { AuthImage } from "./AuthImage";
 import {
   Download,
   Smartphone,
@@ -27,7 +28,8 @@ export const WebtoonReader: React.FC<WebtoonReaderProps> = ({
   const [isMobileFrame, setIsMobileFrame] = useState(true);
   const [showOverlayText, setShowOverlayText] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
-  const [exportDownloadUrl, setExportDownloadUrl] = useState<string | null>(null);
+  const [exportId, setExportId] = useState<string | null>(null);
+  const [isDownloading, setIsDownloading] = useState(false);
   const [panelAssetMap, setPanelAssetMap] = useState<Record<string, string>>({});
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [includeLetteringInExport, setIncludeLetteringInExport] = useState(true);
@@ -51,15 +53,15 @@ export const WebtoonReader: React.FC<WebtoonReaderProps> = ({
           try {
             const assets = await api.getPanelAssets(p.id);
             const active = assets[0]?.versions?.[assets[0].versions.length - 1];
-            return { panelId: p.id, url: active?.storage_key ? getStorageUrl(active.storage_key) : "" };
+            return { panelId: p.id, storageKey: active?.storage_key || "" };
           } catch {
-            return { panelId: p.id, url: "" };
+            return { panelId: p.id, storageKey: "" };
           }
         })
       ).then((results) => {
         const map: Record<string, string> = {};
         results.forEach((r) => {
-          if (r.url) map[r.panelId] = r.url;
+          if (r.storageKey) map[r.panelId] = r.storageKey;
         });
         setPanelAssetMap(map);
       });
@@ -82,17 +84,16 @@ export const WebtoonReader: React.FC<WebtoonReaderProps> = ({
   const handleExportEpisode = async () => {
     setIsExporting(true);
     setMessage(null);
-    setExportDownloadUrl(null);
+    setExportId(null);
     try {
       const job = await api.triggerExport(episode.id, true, includeLetteringInExport);
       const finishedJob = await api.pollJob(job.id);
       if (finishedJob.status === "failed") {
         throw new Error(finishedJob.error_message || "Export failed: All panels must be approved before publishing.");
       }
-      const exportId = finishedJob.result_data?.export_id;
-      if (exportId) {
-        const downloadUrl = `http://127.0.0.1:8000/api/v1/exports/${exportId}/download`;
-        setExportDownloadUrl(downloadUrl);
+      const createdExportId = finishedJob.result_data?.export_id;
+      if (createdExportId) {
+        setExportId(createdExportId);
         setMessage({
           type: "success",
           text: `Episode compiled into mobile slices and packaged with manifest.json (lettering ${includeLetteringInExport ? "baked in" : "clean artwork"})!`
@@ -103,6 +104,18 @@ export const WebtoonReader: React.FC<WebtoonReaderProps> = ({
       setMessage({ type: "error", text: err.message || "Export failed: All panels must be approved before publishing." });
     } finally {
       setIsExporting(false);
+    }
+  };
+
+  const handleDownloadZip = async () => {
+    if (!exportId) return;
+    setIsDownloading(true);
+    try {
+      await api.downloadExportZip(exportId);
+    } catch (err: any) {
+      setMessage({ type: "error", text: err.message || "Failed to download ZIP archive." });
+    } finally {
+      setIsDownloading(false);
     }
   };
 
@@ -164,15 +177,15 @@ export const WebtoonReader: React.FC<WebtoonReaderProps> = ({
             <span>{isExporting ? "Compiling Webtoon..." : "Export Episode"}</span>
           </button>
 
-          {exportDownloadUrl && (
-            <a
-              href={exportDownloadUrl}
-              download
-              className="flex items-center space-x-1.5 px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white transition shadow"
+          {exportId && (
+            <button
+              onClick={handleDownloadZip}
+              disabled={isDownloading}
+              className="flex items-center space-x-1.5 px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white transition shadow disabled:opacity-50"
             >
               <FileArchive className="w-4 h-4" />
-              <span>Download ZIP</span>
-            </a>
+              <span>{isDownloading ? "Downloading..." : "Download ZIP"}</span>
+            </button>
           )}
         </div>
       </div>
@@ -207,15 +220,14 @@ export const WebtoonReader: React.FC<WebtoonReaderProps> = ({
           {/* Vertical Scrolling Panels Canvas */}
           <div className="space-y-4 max-h-[800px] overflow-y-auto pr-1">
             {allPanels.map((panel) => {
-              const imgUrl = panelAssetMap[panel.id];
+              const storageKey = panelAssetMap[panel.id];
               return (
                 <div key={panel.id} className="relative group">
                   {/* Panel Artwork */}
                   <div className="relative aspect-[4/5] bg-studio-950 rounded-lg overflow-hidden border border-studio-800 flex items-center justify-center">
-                    {imgUrl ? (
-                      /* eslint-disable-next-line @next/next/no-img-element */
-                      <img
-                        src={imgUrl}
+                    {storageKey ? (
+                      <AuthImage
+                        storageKey={storageKey}
                         alt={`Panel ${panel.panel_number}`}
                         className="w-full h-full object-cover"
                       />

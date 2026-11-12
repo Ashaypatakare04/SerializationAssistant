@@ -57,7 +57,11 @@ export const QAReportModal: React.FC<QAReportModalProps> = ({ episodeId, onClose
 
         {/* Modal Content */}
         <div className="p-6 overflow-y-auto space-y-6">
-          {!report ? (
+          {!episodeId ? (
+            <div className="text-center py-8 text-studio-400 text-xs">
+              Generate an Adaptation Plan and select an episode first to run QA checks.
+            </div>
+          ) : !report ? (
             <div className="text-center py-8 text-studio-400 text-xs">
               {isLoading ? "Running automated narrative, visual, and sequence QA checks..." : "No QA report available."}
             </div>
